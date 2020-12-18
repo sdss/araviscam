@@ -1,0 +1,9 @@
+---
+
+lvmt:                 # the sole existing MPIA test camera Blackfly GigE of 2020-12-11
+    uid: 19283186
+    serial: 19283186
+    connection:
+        uid: 19283186
+        autoconnect: true
+    shutter: false
