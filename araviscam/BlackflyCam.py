@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 """
 Python3 class to work with Aravis/GenICam cameras, subclass of sdss-basecam.
@@ -20,7 +20,7 @@ from gi.repository import Aravis
 
 # https://pypi.org/project/sdss-basecam/
 # https://githum.com/sdss/basecam/
-from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
+from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError, models
 
 __all__ = ['BlackflyCameraSystem','BlackflyCamera']
 
@@ -107,8 +107,10 @@ class BlackflyCamera(BaseCamera):
         try :
             gain = kwargs['gain']
             if gain > 0.0 :
-                # todo: inprincple one may need a set_gain_auto(ARV_AUTO_OFF) here
+                # todo: in princple one may need a set_gain_auto(ARV_AUTO_OFF) here
                 # to protect against cases where that had been set before in the camera
+                # todo: it might make sense to squeeze this into the minimum
+                # and maximum range of the camera's gain if outside that range.
                 cam.set_gain(gain)
         except Exception as ex :
             # print("failed to set gain " + str(ex))
@@ -120,6 +122,15 @@ class BlackflyCamera(BaseCamera):
         cam.set_boolean("ReverseY",1)
         cam.set_boolean("ReverseX",0)
 
+	# No blacklevel clamping, added 2021-02-18
+	# Disabled for support of astrometry in dark sky exposures
+        cam.set_boolean("BlackLevelClampingEnable",0)
+	# No gamma correction nor sharpening, added 2021-02-18
+        cam.set_boolean("GammaEnable",0)
+
+        # sharpeningEnable is not writable on the FLIR
+        # cam.set_boolean("SharpeningEnable",0)
+
         # see arvenums.h for the list of pixel formats. This is MONO_16 here 
         cam.set_pixel_format(0x01100007)
 
@@ -130,9 +141,6 @@ class BlackflyCamera(BaseCamera):
         except Exception as ex:
             # print("failed to read ReversXY" + str(ex))
             imgrev = None
-
-        # should we also use a variable gain or keep it as fixed?
-        #cam.Gain = cam.Gain.Min
 
         # horizontal and vertical binning set to 1
         cam.set_binning(1,1)
@@ -178,6 +186,9 @@ class BlackflyCamera(BaseCamera):
         :return: The dictionary with the window location and size (x=,y=,width=,height=)
         """
 
+        # To avoid being left over by other programs with no change
+        # to set the exposure time, we switch the auto=0=off first
+        self.device.set_exposure_time_auto(0)
         # Aravis assumes exptime in micro second integers
         exptime_ms = int(0.5 + exposure.exptime * 1e6)
         self.device.set_exposure_time(exptime_ms)
@@ -282,6 +293,15 @@ class BlackflyCamera(BaseCamera):
             # print("failed to read binmode" + str(ex))
             pass
 
+        tmp = False
+        try :
+            tmp = self.device.get_boolean("BlackLevelClampingEnable")
+            addHeaders.append(("CAMBLCLM",tmp != 0,"Black Level Clamping en/disabled"))
+            # print("BlackLevelClampingEnable" +  str(imgrev[0]) + str(imgrev[1]) )
+        except Exception as ex:
+            # print("failed to read BlackLevelClampingEnable" + str(ex))
+            pass
+
         try :
             camtyp = self.device.get_model_name()
             addHeaders.append(("CAMTYP",camtyp,"Camera model"))
@@ -290,7 +310,7 @@ class BlackflyCamera(BaseCamera):
 
 
         for header in addHeaders:
-            exposure.fits_model[0].header_model.append(header)
+            exposure.fits_model[0].header_model.append(models.Card(header))
 
         # unref() is currently usupported in this GObject library.
         # Hope that this does not lead to any memory leak....
@@ -337,7 +357,8 @@ async def singleFrame(exptim, gain=-1.0, verb=False):
     if verb :
         print("wrote ", exp.filename)
 
-# A debugging aid and single test run
+# A debugging aid, demonstrator and simple test run
+# This allows to call this file as an executable from the command line.
 if __name__ == "__main__":
 
     import argparse
