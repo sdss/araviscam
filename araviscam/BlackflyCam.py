@@ -6,6 +6,7 @@ Python3 class to work with Aravis/GenICam cameras, subclass of sdss-basecam.
 .. moduleauthor:: Richard J. Mathar <mathar@mpia.de>
 """
 
+import sys
 import asyncio
 import numpy
 
@@ -22,19 +23,60 @@ from gi.repository import Aravis
 # https://githum.com/sdss/basecam/
 from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError, models
 
-__all__ = ['BlackflyCameraSystem','BlackflyCamera']
+__all__ = ['BlackflyCameraSystem','BlackflyCamera', 'BlackflyImageAreaMixIn']
 
 
 class BlackflyCameraSystem(CameraSystem):
     """ A collection of GenICam cameras, possibly online
+    :param camera_class : `.BaseCamera` subclass
+        The subclass of `.BaseCamera` to use with this camera system.
+    :param camera_config : 
+        A dictionary with the configuration parameters for the multiple
+        cameras that can be present in the system, or the path to a YAML file.
+        Refer to the documentation for details on the accepted format.
+    :type camera_config : dict or path
+    :param include : List of camera UIDs that can be connected.
+    :type include : list
+    :param exclude : list
+        List of camera UIDs that will be ignored.
+    :param logger : ~logging.Logger
+        The logger instance to use. If `None`, a new logger will be created.
+    :param log_header : A string to be prefixed to each message logged.
+    :type log_header : str
+    :param log_file : The path to which to log.
+    :type log_file : str
+    :param verbose : Whether to log to stdout.
+    :type verbose : bool
+    :param ip_list: A list of IP-Adresses to be checked/pinged.
+    :type ip_list: List of strings.
     """
 
-    __version__ = "0.0.3"
+    __version__ = "0.0.6"
+
+
+    # A list of ip addresses in the usual "xxx.yyy.zzz.ttt" or "name.subnet.net"
+    # format that have been added manually/explicitly and may not be found by the
+    # usual broadcase auto-detection (i.e., possibly on some other global network).
+    ips_nonlocal = []
+
+    def __init__(self, camera_class=None, camera_config=None,
+                include=None, exclude=None, logger=None,
+                log_header=None, log_file=None, verbose=False, ip_list=None):
+        super().__init__(camera_class = camera_class, camera_config=camera_config,
+                include=include, exclude=exclude, logger=logger, log_header=log_header, 
+                log_file=log_file, verbose=verbose)
+
+        # If the ctor is fed with an explicit list of IP addresses, add them to
+        # the scanner (with delayed inspection in list_available_cameras).
+        if ip_list is not None:
+            self.ips_nonlocal.extend(ip_list)
 
     def list_available_cameras(self):
         """ Gather serial numbers of online Aravis/Genicam devices.
         :return: a list of serial numbers (as strings). This list may be
                  empty if no cameras are online/switched on.
+                 For cameras explicitly addressed by IP, the serial
+                 numbers have the format sn@ip, with an @ between number and address.
         :rtype: list
 
         .. todo:: optionally implement a specific filter for Blackfly's if Basler 
@@ -43,8 +85,9 @@ class BlackflyCameraSystem(CameraSystem):
 
         # Start with (pessimistic) initially empty set of online devices
         serialNums = []
+        addrs = []
 
-        # Scan the ethernet/bus for recognized cameras.
+        # Broadcast ethernet/bus for recognized cameras.
         # Warning/todo: this gathers also cameras that are not of the Blackfly class,
         # and in conjunction with the SDSS may also recognize the Basler cameras..
         Aravis.update_device_list()
@@ -55,10 +98,28 @@ class BlackflyCameraSystem(CameraSystem):
         for i in range(Ndev) :
             cam = Aravis.Camera.new(Aravis.get_device_id(i))
             uid = cam.get_string("DeviceSerialNumber")
-            # print('online SN ' + str(i) + " : " + uid)
             serialNums.append(uid)
+            addrs.append('')
 
-        return serialNums
+        # Try to ping cameras explicitly proposed with ctor.
+        for ip in self.ips_nonlocal :
+            try :
+                cam = Aravis.Camera.new(ip)
+                uid = cam.get_string("DeviceSerialNumber")
+                # If is this was already in the scan: discard, else add
+                if uid not in serialNums :
+                    serialNums.append(uid)
+                    addrs.append('@'+ip)
+            except :
+                # apparently no such camera at this address....
+                pass
+
+        # we zip the two lists to the format 'serialnumber{@ip}'
+        ids = []
+        for cam in range(len(serialNums)):
+            ids.append(serialNums[cam]+addrs[cam])
+	
+        return ids
 
 
 class BlackflyCamera(BaseCamera):
@@ -86,31 +147,45 @@ class BlackflyCamera(BaseCamera):
         except :
             uid = None
 
+        # reverse lookup of the uid in the list of known cameras
+        cs = BlackflyCameraSystem(BlackflyCamera)
+        slist = cs.list_available_cameras()
+
         if uid is None :
             # uid was not specified: grab the first device that is found
-            print("no uid provided, attaching to first camera")
-            cam = Aravis.Camera.new(Aravis.get_device_id(0))
+            # print("no uid provided, attaching to first camera")
+            idx=0
         else :
-            # reverse lookup of the uid in the list of known cameras
-            cs = BlackflyCameraSystem(BlackflyCamera)
-            slist = cs.list_available_cameras()
             # print("searching " + uid + " in " + str(slist) )
-            try :
-                idx = slist.index(uid)
-            except ValueError :
+            idx = -1
+            for id in slist:
+                # remove the optional ip address of the id
+                slistuid= id.split("@")[0] 
+                if slistuid == uid:
+                    idx = slist.index(id)
+            # not found
+            if idx < 0:
                 raise CameraConnectionError("SN " + uid + " not connected")
  
-            cam = Aravis.Camera.new(Aravis.get_device_id(idx))
+        cam = None
+        try :
+            if "@" in slist[idx] :
+                # if the camera was not on local network use the address part
+                cam = Aravis.Camera.new( slist[idx].split("@")[1] )
+            else :
+                # otherwise the index is the same as the search order...
+                cam = Aravis.Camera.new(Aravis.get_device_id(idx))
+        except :
+            raise CameraConnectionError(" not connected")
 
         # search for an optional gain key in the arguments
         # todo: one could interpret gain=0 here as to call set_gain_auto(ARV_AUTO_ON)
         try :
             gain = kwargs['gain']
             if gain > 0.0 :
-                # todo: in princple one may need a set_gain_auto(ARV_AUTO_OFF) here
-                # to protect against cases where that had been set before in the camera
                 # todo: it might make sense to squeeze this into the minimum
                 # and maximum range of the camera's gain if outside that range.
+                self.device.set_gain_auto(0)
                 cam.set_gain(gain)
         except Exception as ex :
             # print("failed to set gain " + str(ex))
@@ -201,6 +276,8 @@ class BlackflyCamera(BaseCamera):
 
         # the buffer allocated/created within the acquisition()
         buf = await self.loop.run_in_executor(None, self.device.acquisition, tout_ms)
+        if buf is None:
+            raise ExposureError("Exposing for " + str(exposure.exptime) + " sec failed. Timout " + str(tout_ms/1.0e6))
 
         # Decipher which methods this aravis buffer has...
         # print(dir(buf))
@@ -317,8 +394,24 @@ class BlackflyCamera(BaseCamera):
         # buf.unref()
         return
 
+from basecam.mixins import ImageAreaMixIn
 
-async def singleFrame(exptim, gain=-1.0, verb=False):
+class BlackflyImageAreaMixIn(ImageAreaMixIn):
+    """ Allows to select image region and binning factors
+    """
+    async def _get_image_area_internal(self):
+        pass
+
+    async def _set_image_area_internal(self, area=None):
+        pass
+
+    async def _get_binning_internal(self):
+        pass
+
+    async def _set_binning_internal(self, hbin, vbin):
+        pass
+
+async def singleFrame(exptim, gain=-1.0, verb=False, ip_add=None):
     """ Expose once and write the image to a FITS file.
     :param exptim: The exposure time in seconds. Non-negative.
     :type exptim: float
@@ -329,9 +422,12 @@ async def singleFrame(exptim, gain=-1.0, verb=False):
     :type exptim: float
     :param verb: Verbosity on or off
     :type verb: boolean
+    :param ip_add: list of explicit IP's (like 192.168.70.51 or lvmt.irws2.mpia.de)
+    :type ip_add: list of strings
     """
     # this is the MPIA only camera ID as of 2020-12-08
-    # Note that the base camera system uses strings, not integers, here.
+    # i) Note that the base camera system uses strings, not integers, here.
+    # ii) Note the serial number must also be provided if the ip_add is not empty!
     serialNum = "19283186"
     # use this invalid SN to test whether the exposure is indeed refused...
     # serialNum = "1928318"
@@ -347,7 +443,7 @@ async def singleFrame(exptim, gain=-1.0, verb=False):
         }
     }
 
-    cs = BlackflyCameraSystem(BlackflyCamera, camera_config=config, verbose=verb)
+    cs = BlackflyCameraSystem(BlackflyCamera, camera_config=config, verbose=verb, ip_list=ip_add)
     cam = await cs.add_camera(uid=serialNum, autoconnect=True)
     # print("cameras", cs.cameras)
     # print("config" ,config)
@@ -371,12 +467,21 @@ if __name__ == "__main__":
     
     parser.add_argument("-v", '--verbose', action='store_true',
                         help="print some notes to stdout")
+
+    # With the -i switch we can add an explicit IP-Adress for a
+    # camera if we want to read a camera that is not reachable
+    # by the broadcast search.
+    parser.add_argument("-i", '--ip', help="IP address of camera")
     
     args = parser.parse_args()
+
+    ip_cmdLine = []
+    if args.ip is not None:
+        ip_cmdLine.append(args.ip)
 
     # The following 2 lines test that listing the connected cameras works...
     # bsys = BlackflyCameraSystem(camera_class=BlackflyCamera)
     # bsys.list_available_cameras()
 
-    asyncio.run(singleFrame(args.exptime, gain=args.gain, verb=args.verbose))
+    asyncio.run(singleFrame(args.exptime, gain=args.gain, verb=args.verbose,ip_add=ip_cmdLine))
 

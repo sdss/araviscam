@@ -1,12 +1,23 @@
 [tool.poetry]
-name = "araviscam"
-version = "0.0.3"
-description = "Blackfly S GigE camera reader for LVM"
-authors = ["Richard J. Mathar"]
-license = "BSD-3"
+name = "sdss-araviscam"
+version = "0.0.6"
+description = "Blackfly S GigE camera reader for SDSS-V/LVM"
+authors = ["Richard J. Mathar <mathar@mpia-hd.mpg.de>"]
+license = "BSD-3-Clause"
+readme = "README.md"
+keywords = ["SDSS-V","LVM","MPIA"]
+packages = [
+	{ include = "araviscam" },
+]
+classifiers = [
+	"Development Status :: 3 - Alpha",
+	"Topic :: Multimedia :: Video :: Capture",
+	"Topic :: Scientific/Engineering :: Astronomy",
+]
+homepage = "https://wiki.sdss.org"
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = "^3.5"
 
 [tool.poetry.dev-dependencies]
 
