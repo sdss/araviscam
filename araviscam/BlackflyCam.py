@@ -23,6 +23,8 @@ from gi.repository import Aravis
 # https://githum.com/sdss/basecam/
 from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError, models
 
+# from sdsstools import read_yaml_file
+
 __all__ = ['BlackflyCameraSystem','BlackflyCamera', 'BlackflyImageAreaMixIn']
 
 
@@ -51,7 +53,7 @@ class BlackflyCameraSystem(CameraSystem):
     :type ip_list: List of strings.
     """
 
-    __version__ = "0.0.6"
+    __version__ = "0.0.8"
 
 
     # A list of ip addresses in the usual "xxx.yyy.zzz.ttt" or "name.subnet.net"
@@ -70,6 +72,8 @@ class BlackflyCameraSystem(CameraSystem):
         # the scanner (with delayed inspection in list_available_cameras).
         if ip_list is not None:
             self.ips_nonlocal.extend(ip_list)
+
+        # print(self._config) 
 
     def list_available_cameras(self):
         """ Gather serial numbers of online Aravis/Genicam devices.
@@ -191,41 +195,56 @@ class BlackflyCamera(BaseCamera):
             # print("failed to set gain " + str(ex))
             pass
 
-        # flip vertically (reverse Y) so image in numpy is ordered according to 
-        # FITS standards, where the bottom line is sequentialized first, and 
-        # the lower left coordinate is at (1,1).
-        cam.set_boolean("ReverseY",1)
-        cam.set_boolean("ReverseX",0)
-
-	# No blacklevel clamping, added 2021-02-18
-	# Disabled for support of astrometry in dark sky exposures
-        cam.set_boolean("BlackLevelClampingEnable",0)
-	# No gamma correction nor sharpening, added 2021-02-18
-        cam.set_boolean("GammaEnable",0)
-
-        # sharpeningEnable is not writable on the FLIR
-        # cam.set_boolean("SharpeningEnable",0)
-
         # see arvenums.h for the list of pixel formats. This is MONO_16 here 
         cam.set_pixel_format(0x01100007)
 
+        # search for an optional x and y binning factor
         try :
-            imgrev[0] = self.device.get_boolean("ReverseX")
-            imgrev[1] = self.device.get_boolean("ReverseY")
-            # print("reversed" +  str(imgrev[0]) + str(imgrev[1]) )
-        except Exception as ex:
-            # print("failed to read ReversXY" + str(ex))
-            imgrev = None
+            var = kwargs['binning']
+            cam.set_binning(var[0],var[1])
+        except Exception as ex :
+            # print("failed to set binning " + str(ex))
+            # horizontal and vertical binning set to 1
+            cam.set_binning(1,1)
 
-        # horizontal and vertical binning set to 1
-        cam.set_binning(1,1)
+        # scan the general list of genicam featured values
+        # of the four native types
+        for typp, arvLst in kwargs.items():
+            if arvLst is not None:
+                if typp == 'bool':
+                    for genkey, genval in arvLst.items():
+                        try:
+                            cam.set_boolean(genkey,int(genval))
+                        except:
+                            # probably a typo in the yaml file... todo: log this
+                            # print("failed for " + str(genkey)+str(genval))
+                            pass
+                elif typp == 'int':
+                    for genkey, genval in arvLst.items():
+                        try:
+                            cam.set_integer(genkey,genval)
+                        except:
+                            # probably a typo in the yaml file... todo: log this
+                            # print("failed for " + str(genkey)+str(genval))
+                            pass
+                elif typp == 'float':
+                    for genkey, genval in arvLst.items():
+                        try:
+                            cam.set_float(genkey,genval)
+                        except:
+                            # probably a typo in the yaml file... todo: log this
+                            # print("failed for " + str(genkey)+str(genval))
+                            pass
+                elif typp == 'string':
+                    for genkey, genval in arvLst.items():
+                        try:
+                            cam.set_string(genkey,genval)
+                        except:
+                            # probably a typo in the yaml file... todo: log this
+                            # print("failed for " + str(genkey)+str(genval))
+                            pass
 
         dev = cam.get_device()
-
-        # the binning modes are enumerations: 0 = mean, 1=sum
-        # The sum is what most astronomers would expect...
-        dev.set_integer_feature_value("BinningHorizontalMode",1)
-        dev.set_integer_feature_value("BinningVerticalMode",1)
 
         # Take full frames by default (maximizing probability of LVM guide camera
         # to find guide stars in the field)
@@ -411,7 +430,7 @@ class BlackflyImageAreaMixIn(ImageAreaMixIn):
     async def _set_binning_internal(self, hbin, vbin):
         pass
 
-async def singleFrame(exptim, gain=-1.0, verb=False, ip_add=None):
+async def singleFrame(exptim, name, gain=-1.0, verb=False, ip_add=None, config="cameras.yaml"):
     """ Expose once and write the image to a FITS file.
     :param exptim: The exposure time in seconds. Non-negative.
     :type exptim: float
@@ -424,27 +443,12 @@ async def singleFrame(exptim, gain=-1.0, verb=False, ip_add=None):
     :type verb: boolean
     :param ip_add: list of explicit IP's (like 192.168.70.51 or lvmt.irws2.mpia.de)
     :type ip_add: list of strings
+    :param config: Name of the YAML file with the cameras configuration
+    :type config: string of the file name
     """
-    # this is the MPIA only camera ID as of 2020-12-08
-    # i) Note that the base camera system uses strings, not integers, here.
-    # ii) Note the serial number must also be provided if the ip_add is not empty!
-    serialNum = "19283186"
-    # use this invalid SN to test whether the exposure is indeed refused...
-    # serialNum = "1928318"
-    config = {
-        'cameras': {
-            'lvmt1': {
-                'uid': serialNum,
-                'connection': {
-                    'uid': serialNum,
-                    'gain': gain
-                }
-            }
-        }
-    }
 
     cs = BlackflyCameraSystem(BlackflyCamera, camera_config=config, verbose=verb, ip_list=ip_add)
-    cam = await cs.add_camera(uid=serialNum, autoconnect=True)
+    cam = await cs.add_camera(name=name)
     # print("cameras", cs.cameras)
     # print("config" ,config)
 
@@ -455,6 +459,10 @@ async def singleFrame(exptim, gain=-1.0, verb=False, ip_add=None):
 
 # A debugging aid, demonstrator and simple test run
 # This allows to call this file as an executable from the command line.
+# The last command line argument must be the name of the camera
+# as used in the configuration file.
+# Example
+#    BlackflyCam.py [-e seconds] [-g gain] [-v] [-c ../etc/cameras.yaml] {spec.age|spec.agw|...}
 if __name__ == "__main__":
 
     import argparse
@@ -470,9 +478,17 @@ if __name__ == "__main__":
 
     # With the -i switch we can add an explicit IP-Adress for a
     # camera if we want to read a camera that is not reachable
-    # by the broadcast search.
+    # by the broadcast scanner.
     parser.add_argument("-i", '--ip', help="IP address of camera")
-    
+
+    # Name of an optional YAML file
+    parser.add_argument("-c", '--cfg', default="cameras.yaml",
+                        help="YAML file of lvmt cameras")
+
+    # the last argument is mandatory: must be the name of exactly one camera
+    # as used in the configuration file
+    parser.add_argument('camname', default="sci.agw")
+
     args = parser.parse_args()
 
     ip_cmdLine = []
@@ -483,5 +499,5 @@ if __name__ == "__main__":
     # bsys = BlackflyCameraSystem(camera_class=BlackflyCamera)
     # bsys.list_available_cameras()
 
-    asyncio.run(singleFrame(args.exptime, gain=args.gain, verb=args.verbose,ip_add=ip_cmdLine))
+    asyncio.run(singleFrame(args.exptime, args.camname, gain=args.gain, verb=args.verbose,ip_add=ip_cmdLine, config=args.cfg))
 
