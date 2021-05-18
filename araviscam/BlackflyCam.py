@@ -53,7 +53,7 @@ class BlackflyCameraSystem(CameraSystem):
     :type ip_list: List of strings.
     """
 
-    __version__ = "0.0.8"
+    __version__ = "0.0.138"
 
 
     # A list of ip addresses in the usual "xxx.yyy.zzz.ttt" or "name.subnet.net"
@@ -291,7 +291,7 @@ class BlackflyCamera(BaseCamera):
         #   internally)
         #   And 5 seconds margin for any sort of transmission overhead over PoE
         tout_ms = int( 1.0e6* (2.*exposure.exptime+5) )
-        self._notify(CameraEvent.EXPOSURE_INTEGRATING)
+        self.notify(CameraEvent.EXPOSURE_INTEGRATING)
 
         # the buffer allocated/created within the acquisition()
         buf = await self.loop.run_in_executor(None, self.device.acquisition, tout_ms)
