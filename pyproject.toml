@@ -7,12 +7,17 @@ license = "BSD-3-Clause"
 readme = "README.md"
 keywords = ["SDSS-V","LVM","MPIA"]
 packages = [
-	{ include = "araviscam" },
+    { include = "araviscam" },
 ]
 classifiers = [
-	"Development Status :: 3 - Alpha",
-	"Topic :: Multimedia :: Video :: Capture",
-	"Topic :: Scientific/Engineering :: Astronomy",
+    "Development Status :: 3 - Alpha",
+    "Operating System :: OS Independent",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Multimedia :: Video :: Capture",
+    "Topic :: Scientific/Engineering :: Astronomy",
 ]
 homepage = "https://wiki.sdss.org"
 repository = "https://github.com/sdss/araviscam"
