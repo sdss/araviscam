@@ -10,22 +10,24 @@ import sys
 import asyncio
 import numpy
 
+from basecam.mixins import ImageAreaMixIn
+from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError, models
+
 # Since the aravis wrapper for GenICam cameras (such as the Blackfly)
 # is using glib2 GObjects to represent cameras and streams, the
 # PyGObject module allows to call the C functions of aravis in python.
 # https://pygobject.readthedocs.io/en/latest/
 import gi
-
 gi.require_version('Aravis', '0.8')
 from gi.repository import Aravis
 
+
 # https://pypi.org/project/sdss-basecam/
 # https://githum.com/sdss/basecam/
-from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError, models
 
 # from sdsstools import read_yaml_file
 
-__all__ = ['BlackflyCameraSystem','BlackflyCamera', 'BlackflyImageAreaMixIn']
+__all__ = ['BlackflyCameraSystem', 'BlackflyCamera', 'BlackflyImageAreaMixIn']
 
 
 class BlackflyCameraSystem(CameraSystem):
@@ -55,25 +57,24 @@ class BlackflyCameraSystem(CameraSystem):
 
     __version__ = "0.0.138"
 
-
     # A list of ip addresses in the usual "xxx.yyy.zzz.ttt" or "name.subnet.net"
     # format that have been added manually/explicitly and may not be found by the
     # usual broadcase auto-detection (i.e., possibly on some other global network).
     ips_nonlocal = []
 
     def __init__(self, camera_class=None, camera_config=None,
-                include=None, exclude=None, logger=None,
-                log_header=None, log_file=None, verbose=False, ip_list=None):
-        super().__init__(camera_class = camera_class, camera_config=camera_config,
-                include=include, exclude=exclude, logger=logger, log_header=log_header, 
-                log_file=log_file, verbose=verbose)
+                 include=None, exclude=None, logger=None,
+                 log_header=None, log_file=None, verbose=False, ip_list=None):
+        super().__init__(camera_class=camera_class, camera_config=camera_config,
+                         include=include, exclude=exclude, logger=logger, log_header=log_header,
+                         log_file=log_file, verbose=verbose)
 
         # If the ctor is fed with an explicit list of IP addresses, add them to
         # the scanner (with delayed inspection in list_available_cameras).
         if ip_list is not None:
             self.ips_nonlocal.extend(ip_list)
 
-        # print(self._config) 
+        # print(self._config)
 
     def list_available_cameras(self):
         """ Gather serial numbers of online Aravis/Genicam devices.
@@ -99,22 +100,22 @@ class BlackflyCameraSystem(CameraSystem):
         # print(str(Ndev) + " cameras online")
 
         # get_device_id returns a string of type, SN, MAC etc
-        for i in range(Ndev) :
+        for i in range(Ndev):
             cam = Aravis.Camera.new(Aravis.get_device_id(i))
             uid = cam.get_string("DeviceSerialNumber")
             serialNums.append(uid)
             addrs.append('')
 
         # Try to ping cameras explicitly proposed with ctor.
-        for ip in self.ips_nonlocal :
-            try :
+        for ip in self.ips_nonlocal:
+            try:
                 cam = Aravis.Camera.new(ip)
                 uid = cam.get_string("DeviceSerialNumber")
                 # If is this was already in the scan: discard, else add
-                if uid not in serialNums :
+                if uid not in serialNums:
                     serialNums.append(uid)
                     addrs.append('@'+ip)
-            except :
+            except:
                 # apparently no such camera at this address....
                 pass
 
@@ -122,7 +123,7 @@ class BlackflyCameraSystem(CameraSystem):
         ids = []
         for cam in range(len(serialNums)):
             ids.append(serialNums[cam]+addrs[cam])
-	
+
         return ids
 
 
@@ -146,66 +147,66 @@ class BlackflyCamera(BaseCamera):
         """
 
         # search for an optional uid key in the arguments
-        try :
+        try:
             uid = kwargs['uid']
-        except :
+        except:
             uid = None
 
         # reverse lookup of the uid in the list of known cameras
         cs = BlackflyCameraSystem(BlackflyCamera)
         slist = cs.list_available_cameras()
 
-        if uid is None :
+        if uid is None:
             # uid was not specified: grab the first device that is found
             # print("no uid provided, attaching to first camera")
-            idx=0
-        else :
+            idx = 0
+        else:
             # print("searching " + uid + " in " + str(slist) )
             idx = -1
             for id in slist:
                 # remove the optional ip address of the id
-                slistuid= id.split("@")[0] 
+                slistuid = id.split("@")[0]
                 if slistuid == uid:
                     idx = slist.index(id)
             # not found
             if idx < 0:
                 raise CameraConnectionError("SN " + uid + " not connected")
- 
+
         cam = None
-        try :
-            if "@" in slist[idx] :
+        try:
+            if "@" in slist[idx]:
                 # if the camera was not on local network use the address part
-                cam = Aravis.Camera.new( slist[idx].split("@")[1] )
-            else :
+                cam = Aravis.Camera.new(slist[idx].split("@")[1])
+            else:
                 # otherwise the index is the same as the search order...
                 cam = Aravis.Camera.new(Aravis.get_device_id(idx))
-        except :
+        except:
             raise CameraConnectionError(" not connected")
 
         # search for an optional gain key in the arguments
         # todo: one could interpret gain=0 here as to call set_gain_auto(ARV_AUTO_ON)
-        try :
+        try:
             gain = kwargs['gain']
-            if gain > 0.0 :
+            if gain > 0.0:
                 # todo: it might make sense to squeeze this into the minimum
                 # and maximum range of the camera's gain if outside that range.
                 self.device.set_gain_auto(0)
                 cam.set_gain(gain)
-        except Exception as ex :
+        except Exception as ex:
             # print("failed to set gain " + str(ex))
             pass
 
-        # see arvenums.h for the list of pixel formats. This is MONO_16 here 
+        # see arvenums.h for the list of pixel formats. This is MONO_16 here
         cam.set_pixel_format(0x01100007)
 
         # search for an optional x and y binning factor
-        try :
+        try:
             var = kwargs['binning']
-            cam.set_binning(var[0],var[1])
-        except Exception as ex :
+            cam.set_binning(var[0], var[1])
+        except Exception as ex:
             # print("failed to set binning " + str(ex))
             # horizontal and vertical binning set to 1
-            cam.set_binning(1,1)
+            cam.set_binning(1, 1)
 
         # scan the general list of genicam featured values
         # of the four native types
@@ -214,7 +215,7 @@ class BlackflyCamera(BaseCamera):
                 if typp == 'bool':
                     for genkey, genval in arvLst.items():
                         try:
-                            cam.set_boolean(genkey,int(genval))
+                            cam.set_boolean(genkey, int(genval))
                         except:
                             # probably a typo in the yaml file... todo: log this
                             # print("failed for " + str(genkey)+str(genval))
@@ -222,7 +223,7 @@ class BlackflyCamera(BaseCamera):
                 elif typp == 'int':
                     for genkey, genval in arvLst.items():
                         try:
-                            cam.set_integer(genkey,genval)
+                            cam.set_integer(genkey, genval)
                         except:
                             # probably a typo in the yaml file... todo: log this
                             # print("failed for " + str(genkey)+str(genval))
@@ -230,7 +231,7 @@ class BlackflyCamera(BaseCamera):
                 elif typp == 'float':
                     for genkey, genval in arvLst.items():
                         try:
-                            cam.set_float(genkey,genval)
+                            cam.set_float(genkey, genval)
                         except:
                             # probably a typo in the yaml file... todo: log this
                             # print("failed for " + str(genkey)+str(genval))
@@ -238,7 +239,7 @@ class BlackflyCamera(BaseCamera):
                 elif typp == 'string':
                     for genkey, genval in arvLst.items():
                         try:
-                            cam.set_string(genkey,genval)
+                            cam.set_string(genkey, genval)
                         except:
                             # probably a typo in the yaml file... todo: log this
                             # print("failed for " + str(genkey)+str(genval))
@@ -248,12 +249,12 @@ class BlackflyCamera(BaseCamera):
 
         # Take full frames by default (maximizing probability of LVM guide camera
         # to find guide stars in the field)
-        roiBounds = [-1,-1]
-        try :
+        roiBounds = [-1, -1]
+        try:
             roiBounds[0] = dev.get_integer_feature_value("WidthMax")
             roiBounds[1] = dev.get_integer_feature_value("HeightMax")
             # print(" ROI " + str(roiBounds[0]) + " x " + str(roiBounds[1]) )
-            cam.set_region(0,0,roiBounds[0],roiBounds[1])
+            cam.set_region(0, 0, roiBounds[0], roiBounds[1])
         except Exception as ex:
             # print("failed to set ROI " + str(ex))
             pass
@@ -273,7 +274,7 @@ class BlackflyCamera(BaseCamera):
         are usually only interested in the frame's data, and would not
         take the detour of generating a FITS file and reading it back from
         disk.
-        
+
         :param exposure:  On entry, exposure.exptim is the intended exposure time in [sec]
                           On exit, exposure.data is the numpy array of the 16bit data
                           arranged in FITS order (i.e., the data of the bottom row appear first...)
@@ -287,16 +288,17 @@ class BlackflyCamera(BaseCamera):
         exptime_ms = int(0.5 + exposure.exptime * 1e6)
         self.device.set_exposure_time(exptime_ms)
 
-        # timeout (factor 2: assuming there may be two frames in auto mode taken 
+        # timeout (factor 2: assuming there may be two frames in auto mode taken
         #   internally)
         #   And 5 seconds margin for any sort of transmission overhead over PoE
-        tout_ms = int( 1.0e6* (2.*exposure.exptime+5) )
+        tout_ms = int(1.0e6 * (2.*exposure.exptime+5))
         self.notify(CameraEvent.EXPOSURE_INTEGRATING)
 
         # the buffer allocated/created within the acquisition()
         buf = await self.loop.run_in_executor(None, self.device.acquisition, tout_ms)
         if buf is None:
-            raise ExposureError("Exposing for " + str(exposure.exptime) + " sec failed. Timout " + str(tout_ms/1.0e6))
+            raise ExposureError("Exposing for " + str(exposure.exptime) +
+                                " sec failed. Timout " + str(tout_ms/1.0e6))
 
         # Decipher which methods this aravis buffer has...
         # print(dir(buf))
@@ -304,12 +306,12 @@ class BlackflyCamera(BaseCamera):
         # reg becomes a x=, y=, width= height= dictionary
         # these are in standard X11 coordinates where upper left =(0,0)
         reg = buf.get_image_region()
-        # print('region',reg) 
+        # print('region',reg)
 
         data = buf.get_data()
 
-        exposure.data = numpy.ndarray(buffer=data, dtype=numpy.uint16, 
-                shape=(1,reg.height, reg.width))
+        exposure.data = numpy.ndarray(buffer=data, dtype=numpy.uint16,
+                                      shape=(1, reg.height, reg.width))
         # print("exposure data shape", exposure.data.shape)
 
         return reg
@@ -325,10 +327,10 @@ class BlackflyCamera(BaseCamera):
         # reg becomes a x=, y=, width= height= dictionary
         # these are in standard X11 coordinates where upper left =(0,0)
         reg = await self._expose_grabFrame(exposure)
-        # print('region',reg) 
+        # print('region',reg)
 
         binxy = {}
-        try :
+        try:
             # becomes a dictionary with dx=... dy=... for the 2 horiz/vert binn fact
             binxy = self.device.get_binning()
         except Exception as ex:
@@ -344,27 +346,27 @@ class BlackflyCamera(BaseCamera):
             ("Height", reg.height, "[ct] Pixel Rows"),
             ("RegX", 1+reg.x, "[ct] Pixel Region Horiz start"),
             # The lower left FITS corner is the upper left X11 corner...
-            ("RegY", self.regionBounds[1]-(reg.y+reg.height-1), 
-                    "[ct] Pixel Region Vert start")
+            ("RegY", self.regionBounds[1]-(reg.y+reg.height-1),
+             "[ct] Pixel Region Vert start")
         ]
 
         dev = self.device.get_device()
         # print(dir(dev))
 
-        try :
+        try:
             gain = dev.get_float_feature_value("Gain")
-            addHeaders.append(("Gain",gain,"Gain"))
+            addHeaders.append(("Gain", gain, "Gain"))
         except Exception as ex:
             # print("failed to read gain" + str(ex))
             pass
 
-
         imgrev = [False, False]
-        try :
+        try:
             imgrev[0] = self.device.get_boolean("ReverseX")
-            addHeaders.append(("ReverseX",imgrev[0] != 0," Flipped left-right"))
+            addHeaders.append(
+                ("ReverseX", imgrev[0] != 0, " Flipped left-right"))
             imgrev[1] = self.device.get_boolean("ReverseY")
-            addHeaders.append(("ReverseY",imgrev[1] != 0," Flipped up-down"))
+            addHeaders.append(("ReverseY", imgrev[1] != 0, " Flipped up-down"))
             # print("reversed" +  str(imgrev[0]) + str(imgrev[1]) )
         except Exception as ex:
             # print("failed to read ReversXY" + str(ex))
@@ -373,37 +375,41 @@ class BlackflyCamera(BaseCamera):
         # This is an enumeration in the GenICam. See features list of
         #  `arv-tool-0.8 --address=192.168.70.50 features`
 
-        binMod = [-1,-1]
-        try :
+        binMod = [-1, -1]
+        try:
             binMod[0] = dev.get_integer_feature_value("BinningHorizontalMode")
-            if binMod[0] == 0 :
-                addHeaders.append(("BinModeX","Averag","Horiz Bin Mode Sum or Averag"))
-            else :
-                addHeaders.append(("BinModeX","Sum","Horiz Bin Mode Sum or Averag"))
+            if binMod[0] == 0:
+                addHeaders.append(
+                    ("BinModeX", "Averag", "Horiz Bin Mode Sum or Averag"))
+            else:
+                addHeaders.append(
+                    ("BinModeX", "Sum", "Horiz Bin Mode Sum or Averag"))
             binMod[1] = dev.get_integer_feature_value("BinningVerticalMode")
-            if binMod[1] == 0 :
-                addHeaders.append(("BinModeY","Averag","Vert Bin Mode Sum or Averag"))
-            else :
-                addHeaders.append(("BinModeY","Sum","Vert Bin Mode Sum or Averag"))
+            if binMod[1] == 0:
+                addHeaders.append(
+                    ("BinModeY", "Averag", "Vert Bin Mode Sum or Averag"))
+            else:
+                addHeaders.append(
+                    ("BinModeY", "Sum", "Vert Bin Mode Sum or Averag"))
         except Exception as ex:
             # print("failed to read binmode" + str(ex))
             pass
 
         tmp = False
-        try :
+        try:
             tmp = self.device.get_boolean("BlackLevelClampingEnable")
-            addHeaders.append(("CAMBLCLM",tmp != 0,"Black Level Clamping en/disabled"))
+            addHeaders.append(
+                ("CAMBLCLM", tmp != 0, "Black Level Clamping en/disabled"))
             # print("BlackLevelClampingEnable" +  str(imgrev[0]) + str(imgrev[1]) )
         except Exception as ex:
             # print("failed to read BlackLevelClampingEnable" + str(ex))
             pass
 
-        try :
+        try:
             camtyp = self.device.get_model_name()
-            addHeaders.append(("CAMTYP",camtyp,"Camera model"))
-        except :
+            addHeaders.append(("CAMTYP", camtyp, "Camera model"))
+        except:
             pass
-
 
         for header in addHeaders:
             exposure.fits_model[0].header_model.append(models.Card(header))
@@ -413,7 +419,6 @@ class BlackflyCamera(BaseCamera):
         # buf.unref()
         return
 
-from basecam.mixins import ImageAreaMixIn
 
 class BlackflyImageAreaMixIn(ImageAreaMixIn):
     """ Allows to select image region and binning factors
@@ -430,14 +435,11 @@ class BlackflyImageAreaMixIn(ImageAreaMixIn):
     async def _set_binning_internal(self, hbin, vbin):
         pass
 
-async def singleFrame(exptim, name, gain=-1.0, verb=False, ip_add=None, config="cameras.yaml"):
+
+async def singleFrame(exptim, name, verb=False, ip_add=None, config="cameras.yaml"):
     """ Expose once and write the image to a FITS file.
     :param exptim: The exposure time in seconds. Non-negative.
     :type exptim: float
-    :param gain: Gain in the range 0.01 to roughly 50.
-                Negative values are interpreted as not to set the gain
-                but to keep it as it was configured in the camera by the
-                previous exposure.
     :type exptim: float
     :param verb: Verbosity on or off
     :type verb: boolean
@@ -447,14 +449,15 @@ async def singleFrame(exptim, name, gain=-1.0, verb=False, ip_add=None, config="
     :type config: string of the file name
     """
 
-    cs = BlackflyCameraSystem(BlackflyCamera, camera_config=config, verbose=verb, ip_list=ip_add)
+    cs = BlackflyCameraSystem(
+        BlackflyCamera, camera_config=config, verbose=verb, ip_list=ip_add)
     cam = await cs.add_camera(name=name)
     # print("cameras", cs.cameras)
     # print("config" ,config)
 
-    exp = await cam.expose(exptim,"LAB TEST")
+    exp = await cam.expose(exptim, "LAB TEST")
     await exp.write()
-    if verb :
+    if verb:
         print("wrote ", exp.filename)
 
 # A debugging aid, demonstrator and simple test run
@@ -462,17 +465,14 @@ async def singleFrame(exptim, name, gain=-1.0, verb=False, ip_add=None, config="
 # The last command line argument must be the name of the camera
 # as used in the configuration file.
 # Example
-#    BlackflyCam.py [-e seconds] [-g gain] [-v] [-c ../etc/cameras.yaml] {spec.age|spec.agw|...}
+#    BlackflyCam.py [-e seconds] [-v] [-c ../etc/cameras.yaml] {spec.age|spec.agw|...}
 if __name__ == "__main__":
 
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", '--exptime', type=float, default=5.0,
                         help="Expose for for exptime seconds")
-    
-    parser.add_argument("-g", '--gain', type=float, default=15.0,
-                        help="Set gain, range 0.01 to 50. Negative argument to keep previous value")
-    
+
     parser.add_argument("-v", '--verbose', action='store_true',
                         help="print some notes to stdout")
 
@@ -499,5 +499,5 @@ if __name__ == "__main__":
     # bsys = BlackflyCameraSystem(camera_class=BlackflyCamera)
     # bsys.list_available_cameras()
 
-    asyncio.run(singleFrame(args.exptime, args.camname, gain=args.gain, verb=args.verbose,ip_add=ip_cmdLine, config=args.cfg))
-
+    asyncio.run(singleFrame(args.exptime, args.camname, 
+                            verb=args.verbose, ip_add=ip_cmdLine, config=args.cfg))

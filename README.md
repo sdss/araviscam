@@ -1,11 +1,11 @@
 # araviscam
-FLIR Blackfly S GigE camera reader for SDSS-V LVM telescope
+FLIR Blackfly S GigE camera reader for the SDSS-V LVM telescope
 
 ## Purpose
 A python class subclassed from [sdss/basecam](https://github.com/sdss/basecam) to read monochrome images of [FLIR](https://www.flir.com) Blackfly S GigE cameras.
 It uses the [Aravis](https://github.com/AravisProject/aravis) C-library which is an interface to [GenICam](https://www.emva.org/standards-technology/genicam/) cameras. As such it might also be used to read a more general class of GenICam cameras.
 
-Developped for the guider of the Local Volume Mapper (LVM) of the 5th generation of the telescopes of the [Sloan Digital Sky survey](https://en.wikipedia.org/wiki/Sloan_Digital_Sky_Survey) (SDSS-V).
+Developped for the acquisition and guider cameras of the Local Volume Mapper (LVM) instrument of the 5th generation of the telescopes of the [Sloan Digital Sky survey](https://en.wikipedia.org/wiki/Sloan_Digital_Sky_Survey) (SDSS-V).
 
 ## See Also
 
