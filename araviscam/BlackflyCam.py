@@ -265,7 +265,7 @@ class BlackflyCamera(BaseCamera):
     async def _disconnect_internal(self):
         """Close connection to camera.
         """
-        pass
+        self.device = None
 
     async def _expose_grabFrame(self, exposure):
         """ Read a single unbinned full frame.
@@ -436,7 +436,7 @@ class BlackflyImageAreaMixIn(ImageAreaMixIn):
         pass
 
 
-async def singleFrame(exptim, name, verb=False, ip_add=None, config="cameras.yaml"):
+async def singleFrame(exptim, name, verb=False, ip_add=None, config="../etc/cameras.yaml"):
     """ Expose once and write the image to a FITS file.
     :param exptim: The exposure time in seconds. Non-negative.
     :type exptim: float
@@ -451,11 +451,12 @@ async def singleFrame(exptim, name, verb=False, ip_add=None, config="cameras.yam
 
     cs = BlackflyCameraSystem(
         BlackflyCamera, camera_config=config, verbose=verb, ip_list=ip_add)
-    cam = await cs.add_camera(name=name)
+    cam = await cs.add_camera(name=name, uid=cs._config['sci.agw']['uid'])
     # print("cameras", cs.cameras)
     # print("config" ,config)
 
     exp = await cam.expose(exptim, "LAB TEST")
+    await cs.remove_camera(name=name, uid=cs._config['sci.agw']['uid'])
     await exp.write()
     if verb:
         print("wrote ", exp.filename)
@@ -482,7 +483,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", '--ip', help="IP address of camera")
 
     # Name of an optional YAML file
-    parser.add_argument("-c", '--cfg', default="cameras.yaml",
+    parser.add_argument("-c", '--cfg', default="../etc/cameras.yaml",
                         help="YAML file of lvmt cameras")
 
     # the last argument is mandatory: must be the name of exactly one camera
