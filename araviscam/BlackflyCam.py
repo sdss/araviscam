@@ -265,7 +265,7 @@ class BlackflyCamera(BaseCamera):
     async def _disconnect_internal(self):
         """Close connection to camera.
         """
-        pass
+        self.device = None
 
     async def _expose_grabFrame(self, exposure):
         """ Read a single unbinned full frame.
@@ -412,7 +412,7 @@ class BlackflyCamera(BaseCamera):
             pass
 
         for header in addHeaders:
-            exposure.fits_model[0].header_model.append(models.Card(header))
+            exposure.to_hdu()[0].header[header[0]] = header[1]
 
         # unref() is currently usupported in this GObject library.
         # Hope that this does not lead to any memory leak....
