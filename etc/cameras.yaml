@@ -13,8 +13,8 @@ cameras:
         ip: "192.168.70.50"
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -71,8 +71,8 @@ cameras:
         ip: "192.168.70.70"
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283182"
             # gain factor; a value =0 is interpreted to set autogain
@@ -126,8 +126,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -177,8 +177,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -227,8 +227,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -282,8 +282,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -333,8 +333,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -383,8 +383,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -438,8 +438,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -493,8 +493,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
@@ -556,8 +556,8 @@ cameras:
         serial: 0
         # pixel size (in focal plane) in microns
         pixsize: 9.0
-        # pixel scale (in focal plane) in microns per arcsec of SDSS-V_0010
-        pixscal: 8.920
+        # focal length in millimeter per arcsec of SDSS-V_0010
+        flen: 1839.8
         connection:
             uid: "19283186"
             # gain factor; a value =0 is interpreted to set autogain
