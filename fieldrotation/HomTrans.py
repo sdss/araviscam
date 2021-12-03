@@ -18,7 +18,9 @@ __all__ = ['HomTrans', 'Mirr', 'Site', 'Ambi', 'Target', 'Sider']
 
 
 class HomTrans():
-    """ A single coordinate transformation.
+    """ A single affine coordinate transformation.
+    Represented internally by a 4x4 matrix as a projective
+    "homogeneous" transformation.
     """
 
     def __init__(self, entries):
@@ -31,6 +33,12 @@ class HomTrans():
 
     def multiply(self, rhs):
         """ 
+        :param rhs The transformation to the right of the multiplication
+                   sign. So rhs is applied before this transformation.
+        :type HomTrans
+        :return The homogeneous transformation which is the (non-communtative)
+                product of self with rhs, representing the consecutive
+                application of rhs, then self.
         """
         if isinstance(rhs, HomTrans) :
             prod = numpy.matmul(self.matr,rhs.matr)
@@ -43,6 +51,11 @@ class HomTrans():
 
     def apply(self, rhs):
         """ 
+        Apply self transformation to a vector of coordinates.
+        :param rhs The vector. If it has only the standard 3 coordinates,
+                   a virtual 1 is appended before applying the transformation. 
+        :type numpy.ndarray of dimension 1
+        :return a numpy.ndarray with a vector of 3 (standard) Cartesian coordinates.
         """
         if isinstance(rhs, numpy.ndarray) :
             if rhs.ndim == 1 :
@@ -58,11 +71,24 @@ class HomTrans():
                 raise TypeError("rhs not  a vector")
 
 class Mirr():
-    """ A flat mirror
+    """ A flat mirror.
+    This represents an infintely large flat plane. The internal
+    representation is the surface normal and the standard 
+    equation that the dot product of points on the surface by
+    the surface normal equals the distance (of the plane to the
+    origina of coordinates).
     """
 
     def __init__(self, normal, disttoorg):
-
+        """ 
+        :param normal The 3 Cartesian coordinates of the surface normal.
+               This does not need to be normalized to unit length.
+        :type numpy.ndarray with 3 (xyz) numbers
+        :param disttoorg The distance of the mirror to the origin of coordinates
+               As in usual geometry, the distance is the shortest distance of the origin
+               to the infinitely extended mirror plane.
+        :type float
+        """
         if isinstance(normal, numpy.ndarray) and isinstance(disttoorg, (int,float)) :
             self.d = float(disttoorg)
             if normal.ndim == 1 and normal.shape[0] == 3:
@@ -75,6 +101,10 @@ class Mirr():
             raise TypeError("invalid data types")
 
     def toHomTrans(self) :
+        """ 
+        :return The homogeneous transformation that represents
+              the reflection of rays off this mirror surface.
+        """ 
         matr = numpy.zeros((4,4))
         for r in range(4):
             for c in range(4):
@@ -93,12 +123,17 @@ class Site():
     def __init__(self, long= -70.70056, lat= -29.01091, alt=2280, name=None) :
         """ Geolocation of observatory
         :param long geodetic longitude in degrees, E=positive
+               Default is the LCO parameter.
         :type long float
         :param lat geodetic latitude in degrees, N=positive
+               Default is the LCO parameter.
         :type lat float
         :param alt altitude above sea level
+               Default is the LCO parameter.
         :type alt float
-        :param name one of the LVM site acronyms, {LCO|APO|MPIA|KHU}
+        :param name of one of the 4 LVM site acronyms, {LCO|APO|MPIA|KHU}
+               If this parameter is present, it overrides the values
+               of the other 3 numerical parameters.
         :type name string
         """
 
@@ -134,7 +169,7 @@ class Site():
 class Ambi():
     """ ambient parameters relevant to atmospheric refraction
     :param press pressure in hPa. Can be None if the site parameter
-                 is not-None so we can get an estimate from sea level altitude.
+                 is not-None so we can get a pressure estimate from sea level altitude.
     :type press float
     :param temp Temperature in deg Celsius.
     :type temp float
@@ -231,11 +266,12 @@ class Sider():
     """
     def __init__(self, zenang=90.0, azang=0.0, medSign=1) :
         """ A siderostat of 2 mirrors
-        :param zenang Zenith angle of the direction of the exit beam (degrees). Default
-                      is the nominal value of the LCO LVMT.
+        :param zenang Zenith angle of the direction of the exit beam (degrees)
+                   in the range 0..180. Default is the design value of the LCO LVMT.
         :type zenang float
-        :param azang Azimuth angle of the direction of the exit beam (degrees), N=0, E=90.
-                     Default is the nominal value of the LCO LVMT.
+        :param azang Azimuth angle of the direction of the exit beam (degrees)
+                   in the range -180..360 degrees, N=0, E=90.
+                   Default is the design value of the LCO LVMT.
         :type azang float
         :param medSign Sign of the meridian flip design of the mechanics.
                        Must be either +1 or -1. Default is the LCO LVMT design (in most
@@ -290,7 +326,7 @@ class Sider():
 
         # copute mirror positions 
         horiz = target.toHoriz(site=site, ambi=ambi, time = now) 
-        print(horiz)
+        # print(horiz)
 
         star = numpy.zeros((3))
         # same procedure as in the construction of b in the Sider ctor, but with 90-zenang=alt
@@ -328,7 +364,8 @@ class Sider():
         horizNcp = targNcp.toHoriz(site=site, ambi=ambi, time = now) 
 
         starNcp = numpy.zeros((3))
-        # same procedure as in the construction of b in the Sider ctor, but with 90-zenang=alt
+        # same procedure as in the construction of b in the Sider ctor, 
+        # but with 90-zenith angle=altitude
         starNcp[0] = math.sin( horizNcp.az.radian) * math.cos( horizNcp.alt.radian )
         starNcp[1] = math.cos( horizNcp.az.radian ) * math.cos( horizNcp.alt.radian)
         starNcp[2] = math.sin( horizNcp.alt.radian)
@@ -405,7 +442,7 @@ class Sider():
         # Whether "clockwise" means a position angle
         # (for flipped images) or the negative position angle (for non-flipped)
         # depends on a K-mirror being present or not. The non-flipped 
-        # images are on the spectrophoom (names P*) the flipped on
+        # images are on the spectrophotom. (names P*) the flipped on
         # the science and background (name S*, A*, B*)
         posang = fang -labang -math.pi
         if fib.name[0:1] != 'P' :
@@ -424,25 +461,151 @@ class Sider():
 
         return targCtr
 
-    def mpiaMocon(self, site, target, ambi, wlen=0.5, time=None) :
+    def mpiaMocon(self, site, target, ambi, degNCP=0.0, deltaTime =45.0, polyN=20, 
+                  wlen=0.5, time=None, stepsPerturn = 6480000) :
         """ 
+        Compute the polynomial coefficients to rotate the K-mirror for
+        a total of polyN*deltaTime seconds in the future with the MPIA
+        MoCon, starting at 'time'. The result is a 2dim array in the
+        format [[index0,time0,vel0,pol0,acce0,jer0],[index1,time1,vel1,],[],...]
+
         :param site location of the observatory
         :type site fieldrotation.Site
+
         :param target sidereal target in ra/dec
         :type target astropy.coordinates
+
         :param ambi Ambient data relevant for refractive index
         :type ambi
-        :param wlen wavelenght of observation in microns
+
+        :param degNCP The angle in degrees where the NCP (direction of +delta)
+              in the field should be fixed in the focal plane, basically 
+              a fiber selector. 
+              A value of zero means the +delta is up in the laboratory,
+              the value +90 means the +delta direction is right (horizontally E)
+        :type float
+
+        :param deltaTime Time covered by a single polynomial in seconds
+          The default is 45 seconds, which is small enough to keep
+          the target aligned with the 0.23 mrad requirement  using only
+          first order polynomials. Note that using much smaller time
+          intervals may lead to increased download times of trajectories.
+        :type float
+
+        :param polyN Number of polynomials to be constructed.
+          The default is 20. The product of polyN and deltaTime
+          should at least be as long as the exposure time of the next exposure
+          on that optical table/fiber bundle/camera. So defaults of 20
+          and defaults of 45 seconds cover the 15 minutes of what is supposed
+          to be some standard of the LVM (South). Note that the trajectory
+          will stop after that total time; the motor can also be forced to
+          stop earlier (which is not in the scope of this documentation or software.)
+        :type int
+
+        :param wlen wavelength of observation in microns
         :type wlen float
+
         :param time time of the observation /UTC; if None, the current time will be used.
         :type time
-        :return field angle (direction to NCP) in radians
+
+        :param stepsPerturn The number of steps to move the K-mirror
+              by 360 degrees. According to information of Lars Mohr of 2021-11-25 we
+              have 100 steps per degree, 18000 microsteps per degree.
+        :type int
+
+        :return The array of the integer values for the MPIA motor controller
+              external profile. This is the parameter set for the
+              SetExternalProfileData command (221). If polyN<=0, that array
+              is empty, obviously. If the velocity parameter of many 
+              consecutive polynomials stays the same within its integer
+              representation, you are specifying too short deltaTime values
+              without having any benefit (but just longer computation times,
+              longer download times to the MoCon, and less predictable 
+              trajectory start times....)
+        Notes:
+          The program does not check that the targets are reachable, which
+          means whether they are in a zenith angle < 60 deg or above the horizon
+          at that epoch or date.
         """
-        pass
+        moc = []
+        if polyN > 0:
+            if isinstance(time, astropy.time.Time) :
+                now = time 
+            elif isinstance(time, str):
+                now = astropy.time.Time(time, format='isot', scale='utc')
+            elif time is None:
+                now = astropy.time.Time.now()
+
+            tdiff = astropy.time.TimeDelta(deltaTime*astropy.units.second)
+
+            # collect array of bare field angles in radians
+            rads = []
+            # number of steps to switch branch of the arctan (avoid +-180 deg wraps)
+            degsteps =0 
+            for poly in range(polyN+1):
+                # print(now)
+                ang = self.fieldAngle(site, target, ambi, wlen=wlen, time=now)
+                ang += degsteps*2.0*math.pi
+
+                if poly > 0 :
+                    if ang > rads[poly-1] + math.pi :
+                        degsteps -= 1
+                        ang -= 2.0*math.pi 
+                    elif ang < rads[poly-1] - math.pi :
+                        degsteps += 1
+                        ang += 2.0*math.pi 
+
+                rads.append(ang)
+                # advance clock to the start of next polynomial
+                now += tdiff
+ 
+            # same calcuation as in the araviscam.singleFram() function
+            # action of mirror is (cos(2*m), sin(2*m);sin(2*m), -cos(2*m))
+            # where m is the mechanical mirror angle (0 if M2 is up), and
+            # if f is the direction of NCP (+delta) before the K-mirror,
+            # the x and y projections are (sin(f),cos(f)) and
+            # the direction is ( sin(2m+f), -cos(2m+f)) after the K-mirror
+            # = (sin(Pi-2m-f), cos(pi-2m-f)). Setting pi-2m-f= decNcp gives
+            # angle of 2m=pi-f-decNcp (optical, before division thru 2).
+            # The sign flip r->-r means we are DErotating, and the division
+            # through 2 is the usual optical-to-mechanical rotation angle factor.
+            rads = [ (math.pi -r -math.radians(degNCP))/2.  for r in rads]
+
+            # Use an arbitrary jump of 180 deg (that's optically 360 deg)
+            # to keep trajectory near the angle of 0 (stay away from
+            # the stops/limit switches at +-137 deg)
+            if rads[0] < -0.5*math.pi:
+                rads = [r + math.pi for r in rads]
+            elif rads[0] > 0.5*math.pi:
+                rads = [r - math.pi for r in rads]
+
+            # convert all angles from radians to counts
+            rads = [r *stepsPerturn/(2.0*math.pi) for r in rads]
+
+            # 1 cycle = 614.4 microsecs, see section 9.3 of MoCon User's Guide
+            cycsteps = deltaTime/614.4e-6
+            for poly in range(polyN):
+                # Apply factors -1/2 (sign to derotate, 1/2 for opt-mech-transf)
+                # Scale velocity and acceleration with 2^16=65536, yerk with 2^32.
+                # We do not use acceleration and yerk (almost 0 for LVMT)
+                pos = round(rads[poly])
+
+                # rads[poly+1]-rads[poly]  is velocity in units of counts
+                # per deltaTime. Divide by deltaTime to get counts per second
+                # and multiply by 614.4e-6 to get counts per cycle.
+                vel = round(65536*(rads[poly+1]-rads[poly])/cycsteps)
+                # Note the order: index, duration, velocity is before position....
+                traj = [poly, round(cycsteps), vel, pos, 0,0]
+                moc.append(traj)
+ 
+        return moc
 
 
 if __name__ == "__main__":
     """ Example application demonstrating the interface.
+    Examples:
+    ./HomoTrans.py -r 230 -d -80 -f P2-2
+    ./HomoTrans.py -r 230 -d -80 -N 10
     .. todo demonstrate use of proper motions 
     """
     import argparse
@@ -462,6 +625,9 @@ if __name__ == "__main__":
     # optional name of a fiber
     parser.add_argument("-f", '--fiber', help="fiber name like P2-1 or P1-11")
 
+    # optional number of mocon polynomials
+    parser.add_argument("-N", '--polyN', help="number of mocon polynomials")
+
     args = parser.parse_args()
 
     # check ranges and combine ra/dec into a astropy SkyCoord
@@ -474,11 +640,12 @@ if __name__ == "__main__":
     else :
         targ = None
 
-    # step 1: define where the observatory is (on Earth)
+    # step 1: define where the observatory is on Earth
     geoloc = Site(name = args.site)
     # print(geoloc)
 
     # step 2: define where the output beam of the siderostat points to
+    # and use the LCO defaults.
     sid = Sider()
     # print(sid)
 
@@ -491,9 +658,17 @@ if __name__ == "__main__":
     print("field angle " + str(math.degrees(rads)) + " deg")
 
     # if a P[12]-[1..12] fiber head was specified, calculate
-    # also the virtual target in the fiber bundle center.
+    # also the virtual target in the fiber bundle center
+    # for "off-center" tracking, supposing the siderostat PWI
+    # needs to be fed with the target coordinates of the center.
     if args.fiber is not None and targ is not None :
         fib=Fiber.Fiber(args.fiber)
         # print("lab angle " + str(math.degrees(fib.labAngle())) + " deg")
         ctrTarg = sid.centrTarg(geoloc, point, None, fib)
         print(ctrTarg.targ)
+
+    # If the command line option -N was used, construct
+    # the mocon external profile data as a list of lists:
+    if args.polyN is not None :
+        moc=sid.mpiaMocon(geoloc, point, None, polyN= int(args.polyN))
+        print(moc)
