@@ -55,7 +55,7 @@ class HomTrans():
         :param rhs The vector. If it has only the standard 3 coordinates,
                    a virtual 1 is appended before applying the transformation. 
         :type numpy.ndarray of dimension 1
-        :return a numpy.ndarray with a vector of 3 (standard) Cartesian coordinates.
+        :return a numpy.ndarray with a vector of 3 (standard, projected) Cartesian coordinates.
         """
         if isinstance(rhs, numpy.ndarray) :
             if rhs.ndim == 1 :
@@ -82,7 +82,8 @@ class Mirr():
     def __init__(self, normal, disttoorg):
         """ 
         :param normal The 3 Cartesian coordinates of the surface normal.
-               This does not need to be normalized to unit length.
+               It must have nonzero length, but
+               does not need to be normalized to unit length.
         :type numpy.ndarray with 3 (xyz) numbers
         :param disttoorg The distance of the mirror to the origin of coordinates
                As in usual geometry, the distance is the shortest distance of the origin
@@ -217,7 +218,7 @@ class Target():
         """ convert from equatorial to horizontal coordinates
         :param site Observatory location
         :type site fieldrotation.Site
-        :param ambi Ambient parameters characterizing refraction
+        :param ambi Ambient parameters used for refraction correction
         :type ambi fieldrotation.Ambi
         :param time time of the observation
         :type time astropy.time.Time
@@ -245,7 +246,7 @@ class Target():
         # print(earthloc)
         # print(astropy.units.Quantity(100.*refr.press,unit=astropy.units.Pa))
         # print(astropy.units.Quantity(refr.wlen,unit= astropy.units.um))
-        # todo: render also promer motions (all 3 coords)
+        # todo: render also proper motions (all 3 coords)
         # This is a blank form of Alt/aZ because the two angles are yet unknown
         # altaz = astropy.coordinates.builtin_frames.AltAz
         altaz = astropy.coordinates.AltAz(
@@ -466,7 +467,7 @@ class Sider():
         """ 
         Compute the polynomial coefficients to rotate the K-mirror for
         a total of polyN*deltaTime seconds in the future with the MPIA
-        MoCon, starting at 'time'. The result is a 2dim array in the
+        MoCon, starting at 'time'. The result is a 2dim list of lists in the
         format [[index0,time0,vel0,pol0,acce0,jer0],[index1,time1,vel1,],[],...]
 
         :param site location of the observatory
@@ -505,17 +506,20 @@ class Sider():
         :param wlen wavelength of observation in microns
         :type wlen float
 
-        :param time time of the observation /UTC; if None, the current time will be used.
+        :param time start time of the derotation /UTC; if None, the current time will be used.
         :type time
 
         :param stepsPerturn The number of steps to move the K-mirror
               by 360 degrees. According to information of Lars Mohr of 2021-11-25 we
-              have 100 steps per degree, 18000 microsteps per degree.
+              have 100 steps per degree, 18000 microsteps per degree, which
+              defines the default.
         :type int
 
-        :return The array of the integer values for the MPIA motor controller
-              external profile. This is the parameter set for the
-              SetExternalProfileData command (221). If polyN<=0, that array
+        :return The list of list of integer values for the MPIA motion controller
+              external profile. This is the bare parameter set for the
+              SetExternalProfileData command (221). All entries are
+              scaled with the applicable powers of 2^16 or 2^32. 
+              If polyN<=0, that array
               is empty, obviously. If the velocity parameter of many 
               consecutive polynomials stays the same within its integer
               representation, you are specifying too short deltaTime values
@@ -569,6 +573,7 @@ class Sider():
             # angle of 2m=pi-f-decNcp (optical, before division thru 2).
             # The sign flip r->-r means we are DErotating, and the division
             # through 2 is the usual optical-to-mechanical rotation angle factor.
+            # This applies factors -1/2 (sign to derotate, 1/2 for opt-mech-transf)
             rads = [ (math.pi -r -math.radians(degNCP))/2.  for r in rads]
 
             # Use an arbitrary jump of 180 deg (that's optically 360 deg)
@@ -585,7 +590,6 @@ class Sider():
             # 1 cycle = 614.4 microsecs, see section 9.3 of MoCon User's Guide
             cycsteps = deltaTime/614.4e-6
             for poly in range(polyN):
-                # Apply factors -1/2 (sign to derotate, 1/2 for opt-mech-transf)
                 # Scale velocity and acceleration with 2^16=65536, yerk with 2^32.
                 # We do not use acceleration and yerk (almost 0 for LVMT)
                 pos = round(rads[poly])
@@ -597,6 +601,10 @@ class Sider():
                 # Note the order: index, duration, velocity is before position....
                 traj = [poly, round(cycsteps), vel, pos, 0,0]
                 moc.append(traj)
+
+            # last entry with time 0 to stop the motor
+            # (otherwise it would cycle and restart/rewind at entry 0)
+            moc.append([polyN,0,0,0,0,0])
  
         return moc
 
