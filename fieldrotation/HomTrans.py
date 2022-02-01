@@ -170,7 +170,7 @@ class Site():
 class Ambi():
     """ ambient parameters relevant to atmospheric refraction
     :param press pressure in hPa. Can be None if the site parameter
-                 is not-None so we can get a pressure estimate from sea level altitude.
+                 is not-None so we can derive a pressure estimate from sea level altitude.
     :type press float
     :param temp Temperature in deg Celsius.
     :type temp float
@@ -312,7 +312,9 @@ class Sider():
         :type target astropy.coordinates
         :param ambi Ambient data relevant for refractive index
         :type ambi
-        :param wlen wavelenght of observation in microns
+        :param wlen wavelength of observation in microns.
+             Default is 500 nm, the canonical light in the visible and an
+             estimator of the mean band widht of the LVM.
         :type wlen float
         :param time time of the observation /UTC; if None, the current time will be used.
         :type time
@@ -463,7 +465,8 @@ class Sider():
         return targCtr
 
     def mpiaMocon(self, site, target, ambi, degNCP=0.0, deltaTime =45.0, polyN=20, 
-                  wlen=0.5, time=None, stepsPerturn = 6480000) :
+                  wlen=0.5, time=None, homeIsWest = False, homeOffset = 135.0, 
+                  stepsPerturn = 6480000) :
         """ 
         Compute the polynomial coefficients to rotate the K-mirror for
         a total of polyN*deltaTime seconds in the future with the MPIA
@@ -508,6 +511,22 @@ class Sider():
 
         :param time start time of the derotation /UTC; if None, the current time will be used.
         :type time
+
+        :param homeIsWest True if the western of the two limit switches of
+              the K-mirror is the home switch, false if the eastern limit
+              switch is the home switch.
+              Default is what's be in fact the cabling at MPIA in Feb 2022.
+        :type bool
+
+        :param homeOffset The angular difference between the K-mirror position
+              at home and if its M2 is up, measured in degrees. This value is always positive
+              and definitely must be calibrated before this function can be used.
+              Default is an estimate from the engineering design, where the
+              hall sensor (defining home) is slightly "inside" the mechanical switch.
+              The maximum usable range (mechanically) is roughly twice that value,
+              because the two limit switches are approximately symmetrical at
+              the west and east.
+        :type float
 
         :param stepsPerturn The number of steps to move the K-mirror
               by 360 degrees. According to information of Lars Mohr of 2021-11-25 we
@@ -579,15 +598,24 @@ class Sider():
             # Use an arbitrary jump of 180 deg (that's optically 360 deg)
             # to keep trajectory near the angle of 0 (stay away from
             # the stops/limit switches at +-137 deg)
-            if rads[0] < -0.5*math.pi:
+            if rads[0] < -0.5*math.pi :
                 rads = [r + math.pi for r in rads]
-            elif rads[0] > 0.5*math.pi:
+            elif rads[0] > 0.5*math.pi :
                 rads = [r - math.pi for r in rads]
 
             # convert all angles from radians to counts
             rads = [r *stepsPerturn/(2.0*math.pi) for r in rads]
 
+            homeOffsetSteps = homeOffset * stepsPerturn / 360.0
+            # convert all counts measured from 0=up to counts 
+            # relative to the home/reference position of the MoCon
+            if homeIsWest :
+                rads = [r + homeOffsetSteps for r in rads]
+            else :
+                rads = [homeOffsetSteps - r for r in rads]
+
             # 1 cycle = 614.4 microsecs, see section 9.3 of MoCon User's Guide
+            # and basda-mocca/src/interface/Basda/Mocca/Constant.h
             cycsteps = deltaTime/614.4e-6
             for poly in range(polyN):
                 # Scale velocity and acceleration with 2^16=65536, yerk with 2^32.
@@ -604,7 +632,7 @@ class Sider():
 
             # last entry with time 0 to stop the motor
             # (otherwise it would cycle and restart/rewind at entry 0)
-            moc.append([polyN,0,0,0,0,0])
+            moc.append([polyN,0,0,round(rads[-1]),0,0])
  
         return moc
 
@@ -612,8 +640,8 @@ class Sider():
 if __name__ == "__main__":
     """ Example application demonstrating the interface.
     Examples:
-    ./HomoTrans.py -r 230 -d -80 -f P2-2
-    ./HomoTrans.py -r 230 -d -80 -N 10
+    ./HomTrans.py -r 230 -d -80 -f P2-2
+    ./HomTrans.py -r 230 -d -80 -N 10
     .. todo demonstrate use of proper motions 
     """
     import argparse
