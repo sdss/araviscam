@@ -76,7 +76,7 @@ class Mirr():
     representation is the surface normal and the standard 
     equation that the dot product of points on the surface by
     the surface normal equals the distance (of the plane to the
-    origina of coordinates).
+    origin of coordinates).
     """
 
     def __init__(self, normal, disttoorg):
@@ -152,9 +152,9 @@ class Site():
                 self.lat =  49.3965
                 self.alt = 560.
             elif name == 'KHU' :
-                self.long = 127.0533
-                self.lat =  37.5970
-                self.alt = 80.
+                self.long = 127.08236
+                self.lat =  37.23922
+                self.alt = 118.6
         elif isinstance(long, (int,float) ) and isinstance(lat, (int,float)) and isinstance(alt,(int,float)) :
             self.long = long
             self.lat = lat
@@ -208,6 +208,7 @@ class Target():
         :type targ astropy.coordinates.Skycoord
         """
 
+        # print("type" + type(targ).__name__)  
         if isinstance(targ, astropy.coordinates.SkyCoord) :
             self.targ = targ
         else :
@@ -257,7 +258,16 @@ class Target():
                  relative_humidity = refr.rhum,
                  obswl = astropy.units.Quantity(refr.wlen,unit= astropy.units.um))
 
-        horiz = self.targ.transform_to(altaz)
+        try:
+            horiz = self.targ.transform_to(altaz)
+        except ValueError as ex:
+            # This is sometimes triggered by being offline or the
+            # IERS data server being unreachable.
+            # Try again with a sort of offline attempt of the IERS tables
+            from astropy.utils.iers import conf
+            conf.auto_download = False
+            horiz = self.targ.transform_to(altaz)
+
         return horiz
 
       
@@ -640,8 +650,8 @@ class Sider():
 if __name__ == "__main__":
     """ Example application demonstrating the interface.
     Examples:
-    ./HomTrans.py -r 230 -d -80 -f P2-2
-    ./HomTrans.py -r 230 -d -80 -N 10
+    ./HomoTrans.py -r 230 -d -80 -f P2-2
+    ./HomoTrans.py -r 230 -d -80 -N 10
     .. todo demonstrate use of proper motions 
     """
     import argparse
@@ -673,7 +683,9 @@ if __name__ == "__main__":
             targ = astropy.coordinates.SkyCoord(ra=float(args.ra), dec=float(args.dec),unit="deg")
         else :
             targ = astropy.coordinates.SkyCoord(args.ra + " " + args.dec)
+
     else :
+        print("no sky coordinates provided")
         targ = None
 
     # step 1: define where the observatory is on Earth
@@ -685,26 +697,27 @@ if __name__ == "__main__":
     sid = Sider()
     # print(sid)
 
-    # step 3: define where the sidereostat is pointing on the sky
-    point = Target(targ)
-    print("target is ",targ)
+    if targ is not None :
+        # step 3: define where the sidereostat is pointing on the sky
+        point = Target(targ)
+        print("target is ",targ)
+    
+        # calculate the field angle (in radians)
+        rads = sid.fieldAngle(geoloc, point, None)
+        print("field angle " + str(math.degrees(rads)) + " deg")
 
-    # calculate the field angle (in radians)
-    rads = sid.fieldAngle(geoloc, point, None)
-    print("field angle " + str(math.degrees(rads)) + " deg")
+        # if a P[12]-[1..12] fiber head was specified, calculate
+        # also the virtual target in the fiber bundle center
+        # for "off-center" tracking, supposing the siderostat PWI
+        # needs to be fed with the target coordinates of the center.
+        if args.fiber is not None :
+            fib=Fiber.Fiber(args.fiber)
+            # print("lab angle " + str(math.degrees(fib.labAngle())) + " deg")
+            ctrTarg = sid.centrTarg(geoloc, point, None, fib)
+            print(ctrTarg.targ)
 
-    # if a P[12]-[1..12] fiber head was specified, calculate
-    # also the virtual target in the fiber bundle center
-    # for "off-center" tracking, supposing the siderostat PWI
-    # needs to be fed with the target coordinates of the center.
-    if args.fiber is not None and targ is not None :
-        fib=Fiber.Fiber(args.fiber)
-        # print("lab angle " + str(math.degrees(fib.labAngle())) + " deg")
-        ctrTarg = sid.centrTarg(geoloc, point, None, fib)
-        print(ctrTarg.targ)
-
-    # If the command line option -N was used, construct
-    # the mocon external profile data as a list of lists:
-    if args.polyN is not None :
-        moc=sid.mpiaMocon(geoloc, point, None, polyN= int(args.polyN))
-        print(moc)
+        # If the command line option -N was used, construct
+        # the mocon external profile data as a list of lists:
+        if args.polyN is not None :
+            moc=sid.mpiaMocon(geoloc, point, None, polyN= int(args.polyN))
+            print(moc)
