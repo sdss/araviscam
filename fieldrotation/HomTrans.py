@@ -650,8 +650,8 @@ class Sider():
 if __name__ == "__main__":
     """ Example application demonstrating the interface.
     Examples:
-    ./HomoTrans.py -r 230 -d -80 -f P2-2
-    ./HomoTrans.py -r 230 -d -80 -N 10
+    ./HomTrans.py -r 230 -d -80 -f P2-2
+    ./HomTrans.py -r 230 -d -80 -N 10
     .. todo demonstrate use of proper motions 
     """
     import argparse

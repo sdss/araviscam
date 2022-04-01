@@ -57,7 +57,7 @@ class BlackflyCameraSystem(CameraSystem):
     :type ip_list: List of strings.
     """
 
-    __version__ = "0.1.089"
+    __version__ = "0.1.91"
 
     # A list of ip addresses in the usual "xxx.yyy.zzz.ttt" or "name.subnet.net"
     # format that have been added manually/explicitly and may not be found by the
