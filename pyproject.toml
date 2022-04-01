@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sdss-araviscam"
-version = "0.1.91"
+version = "0.1.92"
 description = "Blackfly S GigE camera reader for SDSS-V/LVM"
 authors = ["Richard J. Mathar <mathar@mpia-hd.mpg.de>"]
 license = "BSD-3-Clause"
@@ -38,7 +38,6 @@ python = ">=3.5"
 sdss-basecam = ">=0.5.0"
 PyGObject = ">=3.38.0"
 numpy = "*"
-math = "*"
 astropy = "*"
 # there is no dependence on asyncio here: this is in stdlib since python3.3
 

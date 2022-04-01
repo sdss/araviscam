@@ -26,7 +26,7 @@ author = 'Richard J. Mathar'
 # The short X.Y version
 version = ''
 # The full version, including alpha/beta/rc tags
-release = "0.1.91"
+release = "0.1.92"
 
 
 # -- General configuration ---------------------------------------------------
