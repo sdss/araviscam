@@ -4,6 +4,10 @@
 Python3 class to work with Aravis/GenICam cameras, subclass of sdss-basecam.
 .. module:: araviscam
 .. moduleauthor:: Richard J. Mathar <mathar@mpia.de>
+
+It is not clear at the moment whether this will be used at all.
+There are competing implementations:
+https://github.com/sdss/lvmcam/tree/main/python/lvmcam
 """
 
 import sys
@@ -57,7 +61,7 @@ class BlackflyCameraSystem(CameraSystem):
     :type ip_list: List of strings.
     """
 
-    __version__ = "0.1.92"
+    __version__ = "0.1.102"
 
     # A list of ip addresses in the usual "xxx.yyy.zzz.ttt" or "name.subnet.net"
     # format that have been added manually/explicitly and may not be found by the
@@ -140,6 +144,8 @@ class BlackflyCamera(BaseCamera):
     values assuming that values are stored into a FITS interface (where
     the first values in the sequential data are the bottom row).
     So this is not done in this python code but by the camera.
+
+    ..todo: is there anything here to be adopted from https://github.com/sdss/LVM_FLIR_Software ?
     """
 
     async def _connect_internal(self, **kwargs):
