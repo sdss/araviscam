@@ -8,7 +8,7 @@ package_data = \
 {'': ['*']}
 
 install_requires = \
-['PyGObject>=3.38.0', 'astropy', 'math', 'numpy', 'sdss-basecam>=0.5.0']
+['PyGObject>=3.38.0', 'sdss-basecam>=0.5.0']
 
 entry_points = \
 {'console_scripts': ['run = BlackflyCam:main']}

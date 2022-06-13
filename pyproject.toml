@@ -34,6 +34,7 @@ exclude = [ "*.fits", "dist/*", "PKG-INFO"
 python = ">=3.7,<4"
 sdss-basecam = ">=0.5.0"
 PyGObject = ">=3.38.0"
+
 # there is no dependence on asyncio or math here: this is in stdlib since python3.3
 
 [tool.poetry.dev-dependencies]
