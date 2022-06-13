@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sdss-araviscam"
-version = "0.1.102"
+version = "0.1.103"
 description = "Blackfly S GigE camera reader for SDSS-V/LVM"
 authors = ["Richard J. Mathar <mathar@mpia-hd.mpg.de>"]
 license = "BSD-3-Clause"
@@ -13,12 +13,9 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Operating System :: OS Independent",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.5",
-    "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
@@ -34,11 +31,9 @@ exclude = [ "*.fits", "dist/*", "PKG-INFO"
 
 [tool.poetry.dependencies]
 # note there may be other packages that need higher python versions....
-python = ">=3.5"
+python = ">=3.7,<4"
 sdss-basecam = ">=0.5.0"
 PyGObject = ">=3.38.0"
-numpy = "*"
-astropy = "*"
 # there is no dependence on asyncio or math here: this is in stdlib since python3.3
 
 [tool.poetry.dev-dependencies]
