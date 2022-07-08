@@ -1,1 +1,2 @@
-from .BlackflyCam import *
+#from .BlackflyCam import *
+from .camera import *
