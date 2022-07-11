@@ -14,7 +14,7 @@ import sys
 import abc
 import math
 import asyncio
-import numpy
+import numpy as np
 import astropy
 from collections import namedtuple
 
@@ -24,7 +24,8 @@ from sdsstools.logger import StreamFormatter
 
 from basecam.mixins import ImageAreaMixIn, CoolerMixIn, ExposureTypeMixIn
 from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
-from basecam.models import FITSModel, Card
+from basecam.models import FITSModel, Card, WCSCards
+from astropy import wcs
 
 # Since the aravis wrapper for GenICam cameras (such as the Blackfly)
 # is using glib2 GObjects to represent cameras and streams, the
@@ -125,6 +126,14 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
     ..todo: is there anything here to be adopted from https://github.com/sdss/LVM_FLIR_Software ?
     """
 
+    #TEST_CARDS: Dict[str, DefaultCard] = {
+        #"EXPTIME": DefaultCard(
+            #"EXPTIME",
+            #value="{__exposure__.exptime}",
+            #comment="Exposure time of single integration [s]",
+            #type=float,
+        #),
+    #}
     
     def __init__(self, *args, **kwargs):
 
@@ -138,17 +147,22 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.cam_type = "unknown"
         self.cam_temp = -1
         self.roi = Rect(0, 0, -1, -1) # x0, y0, width, height 
+        self.pixsize = self.camera_params.get("pixsize", None)
+        self.pixscale = self.camera_params.get("pixscale", None)
+        self.flen = self.camera_params.get("flen", 1839.8)
+        self.wcs = WCSCards()
 
         model = self.fits_model[0].header_model
         model.append(Card("GAIN", value="{__exposure__.camera.gain}", comment="[ct] Camera gain"))
         model.append(Card("CamType", value="{__exposure__.camera.cam_type}", comment="Camera model"))
-        model.append(Card("CamTemp", value="{__exposure__.camera.cam_temp}", comment="[C] Camera Temperate"))
+        model.append(Card("CamTemp", value="{__exposure__.camera.cam_temp}", comment="[C] Camera Temperature"))
         model.append(Card("BinX", value="{__exposure__.camera.hbin}", comment="[ct] Horizontal Bin Factor 1, 2 or 4"))
         model.append(Card("BinY", value="{__exposure__.camera.vbin}", comment="[ct] Vertical Bin Factor 1, 2 or 4"))
         model.append(Card("RoiX0", value="{__exposure__.camera.roi.x0}", comment="[Pixel] Roi x0"))
         model.append(Card("RoiY0", value="{__exposure__.camera.roi.y0}", comment="[Pixel] Roi y0"))
         model.append(Card("RoiWd", value="{__exposure__.camera.roi.wd}", comment="[Pixel] Roi Width"))
         model.append(Card("RoiHt", value="{__exposure__.camera.roi.ht}", comment="[Pixel] Roi Height"))
+        model.append(self.wcs)
 
         self.logger.debug(f"{self.fits_model[0].header_model}")
         
@@ -169,7 +183,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         # search for an optional gain key in the arguments
         # todo: one could interpret gain=0 here as to call set_gain_auto(ARV_AUTO_ON)
-        await self.set_gain(self.camera_params.get('gain', 5))
+        await self.set_gain(self.camera_params.get('gain', 0))
 
         # search for an optional x and y binning factor, fullframe image area will be set automatically with the binning.
         await self.set_binning(*self.camera_params.get('binning', [1,1]))
@@ -260,7 +274,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         data = buf.get_data()
 
-        exposure.data = numpy.ndarray(buffer=data, dtype=numpy.uint16,
+        exposure.data = np.ndarray(buffer=data, dtype=np.uint16,
                                       shape=(1, reg.height, reg.width))
         # print("exposure data shape", exposure.data.shape)
 
@@ -273,132 +287,30 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         :return: There is no return value
         """
 
-        exposure
-
         # fill exposure.data with the frame's 16bit data
         # reg becomes a x=, y=, width= height= dictionary
         # these are in standard X11 coordinates where upper left =(0,0)
         reg = await self._expose_grabFrame(exposure)
+
+        self._expose_wcs(exposure, reg)
         
         self.cam_temp = await self.get_temperature()
-        
-        # print('region',reg)
-
-        #binxy = {}
-        #try:
-            ## becomes a dictionary with dx=... dy=... for the 2 horiz/vert binn fact
-            #binxy = self.cam.get_binning()
-        #except Exception as ex:
-            #binxy = None
-
-        ## append FITS header cards
-        ## For the x/y coordinates transform from X11 to FITS coordinates
-        ## Todo: reports the camera y-flipped reg.y if ReversY=true above??
-        #addHeaders = [
-            #("BinX", binxy.dx, "[ct] Horizontal Bin Factor 1, 2 or 4"),
-            #("BinY", binxy.dy, "[ct] Vertical Bin Factor 1, 2 or 4"),
-            #("Width", reg.width, "[ct] Pixel Columns"),
-            #("Height", reg.height, "[ct] Pixel Rows"),
-            #("RegX", 1+reg.x, "[ct] Pixel Region Horiz start"),
-            ## The lower left FITS corner is the upper left X11 corner...
-            #("RegY", self.regionBounds[1]-(reg.y+reg.height-1),
-             #"[ct] Pixel Region Vert start")
-        #]
-
-        #dev = self.cam.get_device()
-
-        #try:
-            #gain = dev.get_float_feature_value("Gain")
-            #addHeaders.append(("Gain", gain, "Gain"))
-        #except Exception as ex:
-            ## print("failed to read gain" + str(ex))
-            #pass
-
-        #imgrev = [False, False]
-        #try:
-            #imgrev[0] = self.cam.get_boolean("ReverseX")
-            #addHeaders.append(
-                #("ReverseX", imgrev[0] != 0, " Flipped left-right"))
-            #imgrev[1] = self.cam.get_boolean("ReverseY")
-            #addHeaders.append(("ReverseY", imgrev[1] != 0, " Flipped up-down"))
-            ## print("reversed" +  str(imgrev[0]) + str(imgrev[1]) )
-        #except Exception as ex:
-            ## print("failed to read ReversXY" + str(ex))
-            #pass
-
-        # This is an enumeration in the GenICam. See features list of
-        #  `arv-tool-0.8 --address=192.168.70.50 features`
-
-        #binMod = [-1, -1]
-        #try:
-            #binMod[0] = dev.get_integer_feature_value("BinningHorizontalMode")
-            #if binMod[0] == 0:
-                #addHeaders.append(
-                    #("BinModeX", "Averag", "Horiz Bin Mode Sum or Averag"))
-            #else:
-                #addHeaders.append(
-                    #("BinModeX", "Sum", "Horiz Bin Mode Sum or Averag"))
-            #binMod[1] = dev.get_integer_feature_value("BinningVerticalMode")
-            #if binMod[1] == 0:
-                #addHeaders.append(
-                    #("BinModeY", "Averag", "Vert Bin Mode Sum or Averag"))
-            #else:
-                #addHeaders.append(
-                    #("BinModeY", "Sum", "Vert Bin Mode Sum or Averag"))
-        #except Exception as ex:
-            ## print("failed to read binmode" + str(ex))
-            #pass
-
-        #tmp = False
-        #try:
-            #tmp = self.cam.get_boolean("BlackLevelClampingEnable")
-            #addHeaders.append(
-                #("CAMBLCLM", tmp != 0, "Black Level Clamping en/disabled"))
-            ## print("BlackLevelClampingEnable" +  str(imgrev[0]) + str(imgrev[1]) )
-        #except Exception as ex:
-            ## print("failed to read BlackLevelClampingEnable" + str(ex))
-            #pass
-
-        #try:
-            #camtyp = self.cam.get_model_name()
-            #addHeaders.append(("CAMTYP", camtyp, "Camera model"))
-        #except:
-            #pass
-
-
-        # call _expose_wcs() to gather WCS header keywords
-        #addHeaders.extend(self._expose_wcs(exposure,reg))
-        #self.header = addHeaders
-
-        #print(exposure.fits_model[0].header_model)
-
-#        print(repr(exposure.to_hdu()[0].header))
-        #print(len(exposure.fits_model[0].header_model))
-#        exposure.fits_model = FITSModel()
-        #idx=11
-        #for headr in addHeaders:
-            #exposure.fits_model[0].header_model.append(Card(headr))
-
-        #print(len(exposure.fits_model[0].header_model))
-        #print(addHeaders[0])
-
-
-#        print(repr(exposure.to_hdu()[0].header))
-
-        # unref() is currently usupported in this GObject library.
-        # Hope that this does not lead to any memory leak....
-        # buf.unref()
-        return
-
-    def _expose_wcs(self, exposure,reg):
+ 
+    def _expose_wcs(self, exposure, reg):
         """ Gather information for the WCS FITS keywords
         :param exposure:  On entry exposure.exptim is the intended exposure time in [sec]
                   On exit, exposure.data contains the 16bit data of a single frame
         :param reg The binning and region information 
         """
-        # the section/dictionary of the yaml file for this camera
-        yamlconfig = self.camera_system._config[self.name]
-        wcsHeaders = []
+        ## the section/dictionary of the yaml file for this camera
+        #yamlconfig = self.camera_system._config[self.name]
+#        wcsHeaders = []
+
+        self.wcs = wcs.WCS()
+        self.wcs.cdelt = np.array([-0.066667, 0.066667])
+        self.wcs.crval = [0, -90]
+        self.wcs.cunit = ["deg", "deg"]
+        self.wcs.ctype = ["RA---TAN", "DEC--TAN"]
 
         # The distance from the long edge of the FLIR camera to the center
         # of the focus (fiber) is 7.144+4.0 mm according to SDSS-V_0110 figure 6
@@ -406,15 +318,9 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         # For the *w or *e cameras the pixel row 1 (in FITS) is that far
         # away in the y-coordinate and in the middle of the x-coordinate.
         # For the *c cameras at the fiber bundle we assume them to be in the beam center.
-        wcsHeaders.append(("CRPIX1", reg.width/2, "[px] RA center along axis 1"))
-        if self.name[-1] == 'c' :
-            wcsHeaders.append(("CRPIX2", reg.height/2, "[px] DEC center along axis 2"))
-        else :
-            # convert 11.14471 mm to microns and to to pixels
-            crefy = 11.14471*1000.0/yamlconfig["pixsize"]
-            wcsHeaders.append(("CRPIX2", -crefy, "[px] DEC center along axis 2"))
-
-        return wcsHeaders
+        crpix1 = reg.width / 2
+        crpix2 = 11.14471 * 1000.0 / self.pixsize
+        self.wcs.crpix = [crpix1, crpix2]
 
     def _status_internal(self):
         return {"temperature": self.cam.get_float("DeviceTemperature"), 
