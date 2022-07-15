@@ -148,6 +148,15 @@ class BlackflyCamera(BaseCamera):
     ..todo: is there anything here to be adopted from https://github.com/sdss/LVM_FLIR_Software ?
     """
 
+    def __init__(self, *args, **kwargs):
+
+        super().__init__(*args, **kwargs)
+
+        self.logger.sh.setLevel(DEBUG)
+        self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m') 
+        self.logger.debug(f"construct {kwargs}")
+
+
     async def _connect_internal(self, **kwargs):
         """Connect to a camera and upload basic binning and ROI parameters.
         :param kwargs:  recognizes the key uid with integer value, the serial number

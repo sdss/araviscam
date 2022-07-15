@@ -142,6 +142,10 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.logger.sh.setLevel(DEBUG)
         self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m') 
 
+
+        self.scraper_data = self.camera_params.get('scraper_data', {})
+        self.logger.debug(f"{self.scraper_data}")
+
         self.gain = -1
         self.hbin, vbin = -1, -1
         self.cam_type = "unknown"
@@ -165,13 +169,13 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         model.append(self.wcs)
 
         self.logger.debug(f"{self.fits_model[0].header_model}")
+#        self.logger.debug(f"{self.camera_params}")
         
 
     async def _connect_internal(self, **kwargs):
         """Connect to a camera and upload basic binning and ROI parameters.
         :param kwargs:  not used
         """
-        self.logger.debug(f"connect  {self.camera_params}")
         self.logger.debug(f"connect {self.name} {self.uid}")
         ip = self.camera_params.get("ip")
 
@@ -280,7 +284,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         return reg
 
-    async def _expose_internal(self, exposure):
+    async def _expose_internal(self, exposure, **kwargs):
         """ Read a single unbinned full frame and store in a FITS file.
         :param exposure:  On entry exposure.exptim is the intended exposure time in [sec]
                   On exit, exposure.data contains the 16bit data of a single frame
@@ -291,6 +295,19 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         # reg becomes a x=, y=, width= height= dictionary
         # these are in standard X11 coordinates where upper left =(0,0)
         reg = await self._expose_grabFrame(exposure)
+
+        params = {k: v.val for k,v in self.scraper_data.items()}
+        
+        if kmirror_angle := kwargs.get("km_d", 0.0):
+            params["km_d"] = kmirror_angle
+
+        if ra_h := kwargs.get("ra_h", None):
+            if dec_d := kwargs.get("dec_d", None):
+                params["ra_h"] = ra_h
+                params["dec_d"] = dec_d
+
+
+        self.logger.debug(f"{params}")
 
         self._expose_wcs(exposure, reg)
         
