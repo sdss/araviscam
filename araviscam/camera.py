@@ -323,11 +323,11 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         #yamlconfig = self.camera_system._config[self.name]
 #        wcsHeaders = []
 
-        self.wcs = wcs.WCS()
-        self.wcs.cdelt = np.array([-0.066667, 0.066667])
-        self.wcs.crval = [0, -90]
-        self.wcs.cunit = ["deg", "deg"]
-        self.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+        exposure.wcs = wcs.WCS()
+        exposure.wcs.cdelt = np.array([-0.066667, 0.066667])
+        exposure.wcs.crval = [0, -90]
+        exposure.wcs.cunit = ["deg", "deg"]
+        exposure.wcs.ctype = ["RA---TAN", "DEC--TAN"]
 
         # The distance from the long edge of the FLIR camera to the center
         # of the focus (fiber) is 7.144+4.0 mm according to SDSS-V_0110 figure 6
@@ -337,7 +337,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         # For the *c cameras at the fiber bundle we assume them to be in the beam center.
         crpix1 = reg.width / 2
         crpix2 = 11.14471 * 1000.0 / self.pixsize
-        self.wcs.crpix = [crpix1, crpix2]
+        exposure.wcs.crpix = [crpix1, crpix2]
 
     def _status_internal(self):
         return {"temperature": self.cam.get_float("DeviceTemperature"), 
