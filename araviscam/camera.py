@@ -17,14 +17,16 @@ import asyncio
 import numpy as np
 import astropy
 from collections import namedtuple
+from typing import Any, Dict
 
 from logging import DEBUG, WARNING
 
 from sdsstools.logger import StreamFormatter  
 
+from basecam import Exposure, CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
 from basecam.mixins import ImageAreaMixIn, CoolerMixIn, ExposureTypeMixIn
-from basecam import CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
-from basecam.models import FITSModel, Card, WCSCards
+from basecam.models import FITSModel, Card, MacroCard, WCSCards
+
 from astropy import wcs
 
 # Since the aravis wrapper for GenICam cameras (such as the Blackfly)
@@ -110,6 +112,8 @@ class BlackflyCameraSystem(CameraSystem):
 
         return self.cameras
 
+Point = namedtuple('Point', ['x0', 'y0'])
+Size = namedtuple('Size', ['wd', 'ht'])
 Rect = namedtuple('Rect', ['x0', 'y0', 'wd', 'ht'])
 
 class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn, GainMixIn):
@@ -122,18 +126,24 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
     values assuming that values are stored into a FITS interface (where
     the first values in the sequential data are the bottom row).
     So this is not done in this python code but by the camera.
-
-    ..todo: is there anything here to be adopted from https://github.com/sdss/LVM_FLIR_Software ?
     """
 
-    #TEST_CARDS: Dict[str, DefaultCard] = {
-        #"EXPTIME": DefaultCard(
-            #"EXPTIME",
-            #value="{__exposure__.exptime}",
-            #comment="Exposure time of single integration [s]",
-            #type=float,
-        #),
-    #}
+    class WCSCards(MacroCard):
+       name = "WCS information"
+
+       def __init__(self, camera):
+            super().__init__()
+            self.camera = camera
+            
+       def macro(self, exposure: Exposure, context: Dict[str, Any] = {}):
+            print(exposure.reg)            
+            print(context)            
+            if exposure.wcs is None:
+                wcs = astropy.wcs.WCS()
+            else:
+                wcs = exposure.wcs
+            return list(wcs.to_header().cards)
+
     
     def __init__(self, *args, **kwargs):
 
@@ -142,35 +152,30 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.logger.sh.setLevel(DEBUG)
         self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m') 
 
-
-        self.scraper_data = self.camera_params.get('scraper_data', {})
-        self.logger.debug(f"{self.scraper_data}")
+        self.scraper_store = self.camera_params.get('scraper_store', {})
 
         self.gain = -1
-        self.hbin, vbin = -1, -1
+        self.binning = [-1, -1]
         self.cam_type = "unknown"
-        self.cam_temp = -1
-        self.roi = Rect(0, 0, -1, -1) # x0, y0, width, height 
-        self.pixsize = self.camera_params.get("pixsize", None)
-        self.pixscale = self.camera_params.get("pixscale", None)
-        self.flen = self.camera_params.get("flen", 1839.8)
-        self.wcs = WCSCards()
+        self.temperature = -1
 
-        model = self.fits_model[0].header_model
-        model.append(Card("GAIN", value="{__exposure__.camera.gain}", comment="[ct] Camera gain"))
-        model.append(Card("CamType", value="{__exposure__.camera.cam_type}", comment="Camera model"))
-        model.append(Card("CamTemp", value="{__exposure__.camera.cam_temp}", comment="[C] Camera Temperature"))
-        model.append(Card("BinX", value="{__exposure__.camera.hbin}", comment="[ct] Horizontal Bin Factor 1, 2 or 4"))
-        model.append(Card("BinY", value="{__exposure__.camera.vbin}", comment="[ct] Vertical Bin Factor 1, 2 or 4"))
-        model.append(Card("RoiX0", value="{__exposure__.camera.roi.x0}", comment="[Pixel] Roi x0"))
-        model.append(Card("RoiY0", value="{__exposure__.camera.roi.y0}", comment="[Pixel] Roi y0"))
-        model.append(Card("RoiWd", value="{__exposure__.camera.roi.wd}", comment="[Pixel] Roi Width"))
-        model.append(Card("RoiHt", value="{__exposure__.camera.roi.ht}", comment="[Pixel] Roi Height"))
-        model.append(self.wcs)
+        self.site = self.camera_params.get('site', "LCO")
 
-        self.logger.debug(f"{self.fits_model[0].header_model}")
-#        self.logger.debug(f"{self.camera_params}")
-        
+        self.detector_size = Size(-1, -1)
+        self.region_bounds=Size(-1, -1)
+        self.image_area=Rect(-1, -1, -1, -1)
+
+        self.pixsize = self.camera_params.get('pixsize', 0.0)
+        self.flen = self.camera_params.get('flen', 0.0)
+        # pixel scale per arcseconds is focal length *pi/180 /3600
+        # = flen * mm *pi/180 /3600
+        # = flen * um *pi/180 /3.6, so in microns per arcsec...
+        self.pixscale = math.radians(self.flen)/3.6
+        self.arcsec_per_pix = self.pixsize / self.pixscale
+        self.log(f"arcsec_per_pix {self.arcsec_per_pix}")
+        # degrees per pixel is arcseconds per pixel/3600 = (mu/pix)/(mu/arcsec)/3600
+        self.degperpix =  self.pixsize/self.pixscale/3600.0
+
 
     async def _connect_internal(self, **kwargs):
         """Connect to a camera and upload basic binning and ROI parameters.
@@ -185,12 +190,28 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.cam = Aravis.Camera.new(ip)
         self.cam_type = self.cam.get_model_name()
 
+#        self.logger.debug(f"{self.cam.get_binning()}")
+        # self.detector_size = list(self.cam.get_sensor_size()) # returns [+8, +4]
+        try:
+            await self.set_binning(1,1)
+        except Exception as ex:
+            self.logger.warning(f"{ex}")
+            await asyncio.wait(5.0)
+            self.logger.warning(f"{ex}")
+            await self.set_binning(1,1)
+
+        self.detector_size = Size(self.cam.get_width_bounds().max, self.cam.get_height_bounds().max)
+        self.logger.debug(f"{self.detector_size}")
+
         # search for an optional gain key in the arguments
         # todo: one could interpret gain=0 here as to call set_gain_auto(ARV_AUTO_ON)
         await self.set_gain(self.camera_params.get('gain', 0))
 
         # search for an optional x and y binning factor, fullframe image area will be set automatically with the binning.
         await self.set_binning(*self.camera_params.get('binning', [1,1]))
+        self.logger.debug(f"{self.image_area}")
+        
+        
         
         # see arvenums.h for the list of pixel formats. This is MONO_16 here, always
         self.cam.set_pixel_format(0x01100007)
@@ -268,112 +289,77 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
             raise ExposureError("Exposing for " + str(exposure.exptime) +
                                 " sec failed. Timout " + str(tout_ms/1.0e6))
 
-        # Decipher which methods this aravis buffer has...
-        # print(dir(buf))
+        return buf.get_data(), buf.get_image_region()
 
-        # reg becomes a x=, y=, width= height= dictionary
-        # these are in standard X11 coordinates where upper left =(0,0)
-        reg = buf.get_image_region()
-        # print('region',reg)
-
-        data = buf.get_data()
-
-        exposure.data = np.ndarray(buffer=data, dtype=np.uint16,
-                                      shape=(1, reg.height, reg.width))
-        # print("exposure data shape", exposure.data.shape)
-
-        return reg
 
     async def _expose_internal(self, exposure, **kwargs):
-        """ Read a single unbinned full frame and store in a FITS file.
+        """ Read a single full frame and store in a FITS file.
         :param exposure:  On entry exposure.exptim is the intended exposure time in [sec]
                   On exit, exposure.data contains the 16bit data of a single frame
         :return: There is no return value
         """
 
-        # fill exposure.data with the frame's 16bit data
-        # reg becomes a x=, y=, width= height= dictionary
-        # these are in standard X11 coordinates where upper left =(0,0)
-        reg = await self._expose_grabFrame(exposure)
+        exposure.scraper_store = self.scraper_store.copy()
 
-        params = {k: v.val for k,v in self.scraper_data.items()}
-        
-        if kmirror_angle := kwargs.get("km_d", 0.0):
-            params["km_d"] = kmirror_angle
+        if kmirror_angle := kwargs.get("km_d", None):
+            exposure.scraper_store.set("km_d", kmirror_angle)
 
         if ra_h := kwargs.get("ra_h", None):
             if dec_d := kwargs.get("dec_d", None):
-                params["ra_h"] = ra_h
-                params["dec_d"] = dec_d
+                exposure.scraper_store.set("ra_h", ra_h)
+                exposure.scraper_store.set("dec_d", dec_d)
 
 
-        self.logger.debug(f"{params}")
+        # fill exposure.data with the frame's 16bit data
+        # reg becomes a x=, y=, width= height= dictionary
+        # these are in standard X11 coordinates where upper left =(0,0)
+        data, roi = await self._expose_grabFrame(exposure)
 
-        self._expose_wcs(exposure, reg)
-        
-        self.cam_temp = await self.get_temperature()
+        self.logger.debug(f"{roi} {self.image_area}")
+
+        exposure.data = np.ndarray(
+            buffer=data,
+            dtype=np.uint16,
+            shape=(1, self.image_area.ht, self.image_area.wd)
+        )
+        self.temperature = await self.get_temperature()
  
-    def _expose_wcs(self, exposure, reg):
-        """ Gather information for the WCS FITS keywords
-        :param exposure:  On entry exposure.exptim is the intended exposure time in [sec]
-                  On exit, exposure.data contains the 16bit data of a single frame
-        :param reg The binning and region information 
-        """
-        ## the section/dictionary of the yaml file for this camera
-        #yamlconfig = self.camera_system._config[self.name]
-#        wcsHeaders = []
-
-        exposure.wcs = wcs.WCS()
-        exposure.wcs.cdelt = np.array([-0.066667, 0.066667])
-        exposure.wcs.crval = [0, -90]
-        exposure.wcs.cunit = ["deg", "deg"]
-        exposure.wcs.ctype = ["RA---TAN", "DEC--TAN"]
-
-        # The distance from the long edge of the FLIR camera to the center
-        # of the focus (fiber) is 7.144+4.0 mm according to SDSS-V_0110 figure 6
-        # and 11.14471 according to figure 3-1 of LVMi-0081
-        # For the *w or *e cameras the pixel row 1 (in FITS) is that far
-        # away in the y-coordinate and in the middle of the x-coordinate.
-        # For the *c cameras at the fiber bundle we assume them to be in the beam center.
-        crpix1 = reg.width / 2
-        crpix2 = 11.14471 * 1000.0 / self.pixsize
-        exposure.wcs.crpix = [crpix1, crpix2]
 
     def _status_internal(self):
         return {"temperature": self.cam.get_float("DeviceTemperature"), 
                 "cooler": math.nan}
 
     async def _get_binning_internal(self):
-        return self.cam.get_binning()
+        return list(self.cam.get_binning())
 
     async def _set_binning_internal(self, hbin, vbin):
         # search for an optional x and y binning factor
         try:
             self.logger.debug(f"set binning: {hbin} {vbin}")
             self.cam.set_binning(hbin, vbin)
-            self.hbin = hbin
-            self.vbin = vbin
+            self.binning = [hbin, vbin]
 
         except Exception as ex:
             # horizontal and vertical binning set to 1
-            self.logger.error(f"failed to set binning: {self.camera_params.get('binning', None)}  {ex}")
+            self.logger.error(f"failed to set binning: {[hbin, vbin]}  {ex}")
             
         await self._set_image_area_internal()
 
     async def _get_image_area_internal(self):
-        self.regionBounds = [self.cam.get_width_bounds().max, self.cam.get_height_bounds().max]
-        return self.regionBounds
+        self.region_bounds = Size(self.cam.get_width_bounds().max, self.cam.get_height_bounds().max)
+        return self.region_bounds
 
     async def _set_image_area_internal(self, area=None):
         if area:
             self.logger.warning(f"image area only with fullframe")
             return # not supported
         await self._get_image_area_internal()
-        self.cam.set_region(0, 0, *self.regionBounds)
-        self.roi = Rect(0, 0, *self.regionBounds) # x0, y0, width, height 
+        self.cam.set_region(0, 0, *self.region_bounds)
+        self.image_area = Rect(0, 0, *self.region_bounds) # x0, y0, width, height 
 
     async def _get_temperature_internal(self):
-        return self.cam.get_float("DeviceTemperature")
+        self.temperature = self.cam.get_float("DeviceTemperature")
+        return self.temperature
 
     async def _set_temperature_internal(self, temperature):
         self.logger.warning(f"temperature setting not possible")
@@ -399,138 +385,4 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         return self.camera_params.get('gain', None)
 
 
-async def singleFrame(exptim, name, verb=False, ip_add=None, config="cameras.yaml", targ=None,
-                      kmirr=0.0, flen =None):
-    """ Expose once and write the image to a FITS file.
-    :param exptim: The exposure time in seconds. Non-negative.
-    :type exptim: float
-    :param verb: Verbosity on or off
-    :type verb: boolean
-    :param ip_add: list of explicit IP's (like 192.168.70.51 or lvmt.irws2.mpia.de)
-    :type ip_add: list of strings
-    :param config: Name of the YAML file with the cameras configuration
-    :type config: string of the file name
-    :param targ: alpha/delta ra/dec of the sidereal target
-    :type targ: astropy.coordinates.SkyCoord
-    :param kmirr: Kmirr angle in degrees (0 if up, positive with right hand rule along North on bench)
-    :type kmirr: float
-    :param flen: focal length of telescope/siderostat in mm
-                 If not provided it will be taken from the configuration file
-    :type flen: float
-    """
-
-    cs = BlackflyCameraSystem(
-        BlackflyCamera, camera_config=config, verbose=verb, ip_list=ip_add)
-    cam = await cs.add_camera(name=name)
-    # print("cameras", cs.cameras)
-    # print("config" ,config)
  
-
-    exp = await cam.expose(exptim, "LAB TEST")
-
-    if targ is not None and kmirr is not None:
-        # if there is already a (partial) header information, keep it,
-        # otherwise create one ab ovo.
-        if exp.wcs is None :
-            wcshdr = astropy.io.fits.Header()
-        else :
-            wcshdr = exp.wcs.to_header()
-
-        key = astropy.io.fits.Card("CUNIT1","deg","WCS units along axis 1")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CUNIT2","deg","WCS units along axis 2")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CTYPE1","RA---TAN","WCS type axis 1")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CTYPE2","DEC--TAN","WCS type axis 2")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CRVAL1",targ.ra.deg,"[deg] RA at reference pixel")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CRVAL2",targ.dec.deg,"[deg] DEC at reference pixel")
-        wcshdr.append(key)
-
-        # field angle: degrees, then radians
-        # direction of NCP on the detectors (where we have already flipped pixels
-        # on all detectors so fieldrot=kmirr=0 implies North is up and East is left)
-        # With right-handed-rule: zero if N=up (y-axis), 90 deg if N=right (x-axis)
-        # so the direction is the vector ( sin(f), cos(f)) before the K-mirror.
-        # Action of K-mirror is ( cos(2*m), sin(2*m); sin(2*m), -cos(2*m))
-        # and action of prism is (-1 0 ; 0 1), i.e. to flip the horizontal coordinate.
-        # todo: get starting  value from a siderostat field rotation tracking model
-        fieldrot = 0.0
-
-        
-        if name[-1] == 'c' :
-            # without prism, assuming center camera placed horizontally
-            if name[:4] == 'spec' :
-                # without K-mirror
-                pass
-            else :
-                # with K-mirror
-                # in the configuration the y-axis of the image has been flipped,
-                # the combined action of (1, 0; 0, -1) and the K-mirror is (cos(2m), sin(2m); -sin(2m), cos(2m))
-                # and applied to the input vector this is (sin(2m+f), cos(2m+f))
-                fieldrot += 2.*kmirr
-        else :
-            # with prism
-            if name[:4] == 'spec' :
-                # without K-mirror
-                # Applied to input beam this gives (-sin(f), cos(f)) but prism effect
-                # had been undone by vertical flip in the FLIR image. 
-                pass
-            else :
-                # with K-mirror
-                # Combined action of K-mirror and prism is (-cos(2*m), -sin(2*m);sin(2*m), -cos(2*m)).
-                # Applied to input beam this gives (-sin(2*m+f), -cos(2*m+f)) = (sin(2*m+f+pi), cos(2*m+f+pi)).
-                fieldrot += 2.*kmirr+180.0
-
-            if name[-1] == 'w' :
-                # Camera is vertically,
-                # so up in the lab is right in the image
-                fieldrot += 90
-            else :
-                # Camera is vertically,
-                # so up in the lab is left in the image
-                fieldrot -= 90
-
-        fieldrot = math.radians(fieldrot)
-
-        # the section/dictionary of the yaml file for this camera
-        yamlconfig = cs._config[name]
-
-        if flen is None:
-            flen = yamlconfig["flen"]
-
-        # pixel scale per arcseconds is focal length *pi/180 /3600
-        # = flen * mm *pi/180 /3600
-        # = flen * um *pi/180 /3.6, so in microns per arcsec...
-        pixscal = math.radians(flen)/3.6
-
-        # degrees per pixel is arcseconds per pixel/3600 = (mu/pix)/(mu/arcsec)/3600
-        degperpix =  yamlconfig["pixsize"]/pixscal/3600.0
-
-        # for the right handed coordinates
-        # (pixx,pixy) = (cos f', -sin f'; sin f', cos f')*(DEC,RA) where f' =90deg -fieldrot
-        # (pixx,pixy) = (sin f, -cos f; cos f , sin f)*(DEC,RA)
-        # (sin f, cos f; -cos f, sin f)*(pixx,pixy) = (DEC,RA)
-        # (-cos f, sin f; sin f, cos f)*(pixx,pixy) = (RA,DEC)
-        # Note that the det of the WCS matrix is negativ (because RA/DEC is left-handed...)
-        cosperpix = degperpix*math.cos(fieldrot) 
-        sinperpix = degperpix*math.sin(fieldrot) 
-        key = astropy.io.fits.Card("CD1_1",-cosperpix,"[deg/px] WCS matrix diagonal")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CD2_2",cosperpix,"[deg/px] WCS matrix diagonal")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CD1_2",sinperpix,"[deg/px] WCS matrix outer diagonal")
-        wcshdr.append(key)
-        key = astropy.io.fits.Card("CD2_1",sinperpix,"[deg/px] WCS matrix outer diagonal")
-        wcshdr.append(key)
-
-        exp.wcs = astropy.wcs.WCS(wcshdr)
-        # print(exp.wcs.to_header_string()) 
-        for headr in wcshdr.cards :
-            exp.fits_model[0].header_model.append(Card(headr))
-
-    await exp.write()
-    if verb:
-        print("wrote ", exp.filename)
