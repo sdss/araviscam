@@ -320,7 +320,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         exposure.data = np.ndarray(
             buffer=data,
             dtype=np.uint16,
-            shape=(1, self.image_area.ht, self.image_area.wd)
+            shape=(self.image_area.ht, self.image_area.wd)
         )
         self.temperature = await self.get_temperature()
  
