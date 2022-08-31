@@ -25,7 +25,6 @@ from sdsstools.logger import StreamFormatter
 
 from basecam import Exposure, CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
 from basecam.mixins import ImageAreaMixIn, CoolerMixIn, ExposureTypeMixIn
-from basecam.models import FITSModel, Card, MacroCard, WCSCards
 
 from astropy import wcs
 
@@ -128,23 +127,6 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
     So this is not done in this python code but by the camera.
     """
 
-    class WCSCards(MacroCard):
-       name = "WCS information"
-
-       def __init__(self, camera):
-            super().__init__()
-            self.camera = camera
-            
-       def macro(self, exposure: Exposure, context: Dict[str, Any] = {}):
-            print(exposure.reg)            
-            print(context)            
-            if exposure.wcs is None:
-                wcs = astropy.wcs.WCS()
-            else:
-                wcs = exposure.wcs
-            return list(wcs.to_header().cards)
-
-    
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
