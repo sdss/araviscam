@@ -10,23 +10,19 @@ There are competing implementations:
 https://github.com/sdss/lvmcam/tree/main/python/lvmcam
 """
 
-import sys
 import abc
 import math
 import asyncio
-import numpy as np
-import astropy
+import numpy
 from collections import namedtuple
-from typing import Any, Dict
+# from typing import Any, Dict
 
 from logging import DEBUG, WARNING
 
-from sdsstools.logger import StreamFormatter  
+from sdsstools.logger import StreamFormatter
 
 from basecam import Exposure, CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
 from basecam.mixins import ImageAreaMixIn, CoolerMixIn, ExposureTypeMixIn
-
-from astropy import wcs
 
 # Since the aravis wrapper for GenICam cameras (such as the Blackfly)
 # is using glib2 GObjects to represent cameras and streams, the
@@ -72,7 +68,7 @@ class BlackflyCameraSystem(CameraSystem):
     """ A collection of GenICam cameras, possibly online
     :param camera_class : `.BaseCamera` subclass
         The subclass of `.BaseCamera` to use with this camera system.
-    :param camera_config : 
+    :param camera_config :
         A dictionary with the configuration parameters for the multiple
         cameras that can be present in the system, or the path to a YAML file.
         Refer to the documentation for details on the accepted format.
@@ -89,8 +85,6 @@ class BlackflyCameraSystem(CameraSystem):
     :type log_file : str
     :param verbose : Whether to log to stdout.
     :type verbose : bool
-    :param ip_list: A list of IP-Adresses to be checked/pinged.
-    :type ip_list: List of strings.
     """
 
     from araviscam import __version__
@@ -102,7 +96,7 @@ class BlackflyCameraSystem(CameraSystem):
 
     def __init__(self, camera_class=None, camera_config=None,
                  include=None, exclude=None, logger=None,
-                 log_header=None, log_file=None, verbose=False, ip_list=None):
+                 log_header=None, log_file=None, verbose=False):
         super().__init__(camera_class=camera_class, camera_config=camera_config,
                          include=include, exclude=exclude, logger=logger, log_header=log_header,
                          log_file=log_file, verbose=verbose)
@@ -132,12 +126,13 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         super().__init__(*args, **kwargs)
 
         self.logger.sh.setLevel(DEBUG)
-        self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m') 
+        self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m')
 
         self.scraper_store = self.camera_params.get('scraper_store', {})
 
         self.gain = -1
         self.binning = [-1, -1]
+        self.cam = None
         self.cam_type = "unknown"
         self.temperature = -1
 
@@ -168,9 +163,18 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         self.logger.debug(f"{ip}")
 #        self.logger.debug(self.camera_system.list_available_cameras())
-        
+
         self.cam = Aravis.Camera.new(ip)
         self.cam_type = self.cam.get_model_name()
+
+        # correct pixsize for known LVM BlackFly models (superceding configuration)
+        if 'BFS-PGE-70S7C' in self.cam_type:
+            self.pixsize = 4.5
+        elif 'BFS-PGE-16S7M' in self.cam_type :
+            self.pixsize = 9.0
+
+        self.arcsec_per_pix = self.pixsize / self.pixscale
+        self.degperpix =  self.arsec_per_pix/3600.0
 
 #        self.logger.debug(f"{self.cam.get_binning()}")
         # self.detector_size = list(self.cam.get_sensor_size()) # returns [+8, +4]
@@ -189,12 +193,13 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         # todo: one could interpret gain=0 here as to call set_gain_auto(ARV_AUTO_ON)
         await self.set_gain(self.camera_params.get('gain', 0))
 
-        # search for an optional x and y binning factor, fullframe image area will be set automatically with the binning.
+        # search for an optional x and y binning factor,
+        # fullframe image area will be set automatically with the binning.
         await self.set_binning(*self.camera_params.get('binning', [1,1]))
         self.logger.debug(f"{self.image_area}")
-        
-        
-        
+
+
+
         # see arvenums.h for the list of pixel formats. This is MONO_16 here, always
         self.cam.set_pixel_format(0x01100007)
 
@@ -206,7 +211,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
                     for genkey, genval in arvLst.items():
                         try:
                             if self.cam.get_boolean(genkey) != genval:
-                               self.cam.set_boolean(genkey, int(genval))
+                                self.cam.set_boolean(genkey, int(genval))
                             self.logger.debug(f"genicam param : {genkey}={genval}")
                         except Exception as ex:
                             self.logger.error(f"failed setting: {genkey}={genval} {ex}")
@@ -299,16 +304,16 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         self.logger.debug(f"{roi} {self.image_area}")
 
-        exposure.data = np.ndarray(
+        exposure.data = numpy.ndarray(
             buffer=data,
-            dtype=np.uint16,
+            dtype=numpy.uint16,
             shape=(self.image_area.ht, self.image_area.wd)
         )
         self.temperature = await self.get_temperature()
- 
+
 
     def _status_internal(self):
-        return {"temperature": self.cam.get_float("DeviceTemperature"), 
+        return {"temperature": self.cam.get_float("DeviceTemperature"),
                 "cooler": math.nan}
 
     async def _get_binning_internal(self):
@@ -324,7 +329,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         except Exception as ex:
             # horizontal and vertical binning set to 1
             self.logger.error(f"failed to set binning: {[hbin, vbin]}  {ex}")
-            
+
         await self._set_image_area_internal()
 
     async def _get_image_area_internal(self):
@@ -337,7 +342,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
             return # not supported
         await self._get_image_area_internal()
         self.cam.set_region(0, 0, *self.region_bounds)
-        self.image_area = Rect(0, 0, *self.region_bounds) # x0, y0, width, height 
+        self.image_area = Rect(0, 0, *self.region_bounds) # x0, y0, width, height
 
     async def _get_temperature_internal(self):
         self.temperature = self.cam.get_float("DeviceTemperature")
@@ -360,11 +365,11 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         except Exception as ex:
             self.logger.error(f"failed to set gain: {gain} {ex}")
-        
+
 
     async def _get_gain_internal(self):
         """Internal method to get the gain."""
         return self.camera_params.get('gain', None)
 
 
- 
+
