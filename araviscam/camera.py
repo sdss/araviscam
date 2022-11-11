@@ -166,17 +166,20 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         self.cam = Aravis.Camera.new(ip)
         self.cam_type = self.cam.get_model_name()
+        self.logger.debug(f"{self.cam_type}")
 
-        # correct pixsize for known LVM BlackFly models (superceding configuration)
-        if 'BFS-PGE-70S7C' in self.cam_type:
-            self.pixsize = 4.5
-        elif 'BFS-PGE-16S7M' in self.cam_type :
-            self.pixsize = 9.0
+#        # correct pixsize for known LVM BlackFly models (superceding configuration)
+#        if 'BFS-PGE-70S7C' in self.cam_type:
+#            self.pixsize = 4.5
+#        elif 'BFS-PGE-16S7M' in self.cam_type :
+#        self.pixsize = 9.0
+
+        self.logger.debug(f"Pixsize: {self.pixsize}")
 
         self.arcsec_per_pix = self.pixsize / self.pixscale
-        self.degperpix =  self.arsec_per_pix/3600.0
+        self.degperpix =  self.arcsec_per_pix/3600.0
 
-#        self.logger.debug(f"{self.cam.get_binning()}")
+        self.logger.debug(f"{self.cam.get_binning()}")
         # self.detector_size = list(self.cam.get_sensor_size()) # returns [+8, +4]
         try:
             await self.set_binning(1,1)
@@ -186,6 +189,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
             self.logger.warning(f"{ex}")
             await self.set_binning(1,1)
 
+
         self.detector_size = Size(self.cam.get_width_bounds().max, self.cam.get_height_bounds().max)
         self.logger.debug(f"{self.detector_size}")
 
@@ -193,12 +197,11 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         # todo: one could interpret gain=0 here as to call set_gain_auto(ARV_AUTO_ON)
         await self.set_gain(self.camera_params.get('gain', 0))
 
+
         # search for an optional x and y binning factor,
         # fullframe image area will be set automatically with the binning.
         await self.set_binning(*self.camera_params.get('binning', [1,1]))
         self.logger.debug(f"{self.image_area}")
-
-
 
         # see arvenums.h for the list of pixel formats. This is MONO_16 here, always
         self.cam.set_pixel_format(0x01100007)
