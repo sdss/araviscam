@@ -5,9 +5,6 @@ Python3 class to work with Aravis/GenICam cameras, subclass of sdss-basecam.
 .. module:: araviscam
 .. moduleauthor:: Richard J. Mathar <mathar@mpia.de>
 
-It is not clear at the moment whether this will be used at all.
-There are competing implementations:
-https://github.com/sdss/lvmcam/tree/main/python/lvmcam
 """
 
 import abc
@@ -128,7 +125,8 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.logger.sh.setLevel(DEBUG)
         self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m')
 
-        self.scraper_store = self.camera_params.get('scraper_store', {})
+        self.actor = self.camera_params.get('actor', None)
+        self.scraper_store = self.actor.scraper_store
 
         self.gain = -1
         self.binning = [-1, -1]
@@ -136,7 +134,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.cam_type = "unknown"
         self.temperature = -1
 
-        self.site = self.camera_params.get('site', "LCO")
+#        self.site = self.camera_params.get('site', "LCO")
 
         self.detector_size = Size(-1, -1)
         self.region_bounds=Size(-1, -1)
@@ -167,12 +165,6 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.cam = Aravis.Camera.new(ip)
         self.cam_type = self.cam.get_model_name()
         self.logger.debug(f"{self.cam_type}")
-
-#        # correct pixsize for known LVM BlackFly models (superceding configuration)
-#        if 'BFS-PGE-70S7C' in self.cam_type:
-#            self.pixsize = 4.5
-#        elif 'BFS-PGE-16S7M' in self.cam_type :
-#        self.pixsize = 9.0
 
         self.logger.debug(f"Pixsize: {self.pixsize}")
 
