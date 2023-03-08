@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sdss-araviscam"
-version = "0.1.111"
+version = "0.1.112"
 description = "Blackfly S GigE camera reader for SDSS-V/LVM"
 authors = ["Richard J. Mathar <mathar@mpia-hd.mpg.de>"]
 license = "BSD-3-Clause"
@@ -13,7 +13,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Operating System :: OS Independent",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Topic :: Multimedia :: Video :: Capture",
