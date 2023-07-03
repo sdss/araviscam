@@ -142,6 +142,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         self.pixsize = self.camera_params.get('pixsize', 0.0)
         self.flen = self.camera_params.get('flen', 0.0)
+        self.telescope = self.camera_params.get('telescope', 'NA')
         # pixel scale per arcseconds is focal length *pi/180 /3600
         # = flen * mm *pi/180 /3600
         # = flen * um *pi/180 /3.6, so in microns per arcsec...
@@ -365,6 +366,3 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
     async def _get_gain_internal(self):
         """Internal method to get the gain."""
         return self.camera_params.get('gain', None)
-
-
-
