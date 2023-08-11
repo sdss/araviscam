@@ -8,27 +8,34 @@ Python3 class to work with Aravis/GenICam cameras, subclass of sdss-basecam.
 """
 
 import abc
-import math
 import asyncio
-import numpy
+import math
 from collections import namedtuple
-# from typing import Any, Dict
-
 from logging import DEBUG, WARNING
-
-from sdsstools.logger import StreamFormatter
-
-from basecam import Exposure, CameraSystem, BaseCamera, CameraEvent, CameraConnectionError
-from basecam.mixins import ImageAreaMixIn, CoolerMixIn, ExposureTypeMixIn
 
 # Since the aravis wrapper for GenICam cameras (such as the Blackfly)
 # is using glib2 GObjects to represent cameras and streams, the
 # PyGObject module allows to call the C functions of aravis in python.
 # https://pygobject.readthedocs.io/en/latest/
 import gi
+import numpy
+from basecam import (
+    BaseCamera,
+    CameraConnectionError,
+    CameraEvent,
+    CameraSystem,
+    Exposure,
+)
+from basecam.mixins import CoolerMixIn, ExposureTypeMixIn, ImageAreaMixIn
+from sdsstools.logger import StreamFormatter
+
+# from typing import Any, Dict
+
+
+
+
 gi.require_version('Aravis', '0.8')
 from gi.repository import Aravis
-
 
 # https://pypi.org/project/sdss-basecam/
 # https://githum.com/sdss/basecam/
@@ -126,7 +133,6 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         self.logger.sh.formatter = StreamFormatter(fmt='%(asctime)s %(name)s %(levelname)s %(filename)s:%(lineno)d: \033[1m%(message)s\033[21m')
 
         self.actor = self.camera_params.get('actor', None)
-        self.scraper_store = self.actor.scraper_store
 
         self.gain = -1
         self.binning = [-1, -1]
@@ -281,17 +287,6 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
                   On exit, exposure.data contains the 16bit data of a single frame
         :return: There is no return value
         """
-
-        exposure.scraper_store = self.scraper_store.copy()
-
-        if kmirror_angle := kwargs.get("km_d", None):
-            exposure.scraper_store.set("km_d", kmirror_angle)
-
-        if ra_h := kwargs.get("ra_h", None):
-            if dec_d := kwargs.get("dec_d", None):
-                exposure.scraper_store.set("ra_h", ra_h)
-                exposure.scraper_store.set("dec_d", dec_d)
-
 
         # fill exposure.data with the frame's 16bit data
         # reg becomes a x=, y=, width= height= dictionary
