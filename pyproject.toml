@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sdss-araviscam"
-version = "0.1.112"
+version = "0.2.0"
 description = "Blackfly S GigE camera reader for SDSS-V/LVM"
 authors = ["Richard J. Mathar <mathar@mpia-hd.mpg.de>"]
 license = "BSD-3-Clause"
@@ -21,7 +21,7 @@ classifiers = [
 homepage = "https://wiki.sdss.org"
 repository = "https://github.com/sdss/araviscam"
 
-include = ["LICENSE", "README.md", "araviscam/*", "etc/*", 
+include = ["LICENSE", "README.md", "araviscam/*", "etc/*",
 	"docs/*"
 ]
 
