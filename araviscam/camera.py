@@ -25,6 +25,7 @@ from basecam import (
     CameraEvent,
     CameraSystem,
     Exposure,
+    ExposureError,
 )
 from basecam.mixins import CoolerMixIn, ExposureTypeMixIn, ImageAreaMixIn
 from sdsstools.logger import StreamFormatter
@@ -245,7 +246,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         """
         self.cam = None
 
-    async def _expose_grabFrame(self, exposure):
+    async def _expose_grabFrame(self, exposure, nretries=3):
         """ Read a single unbinned full frame.
         The class splits the parent class' exposure into this function and
         the part which generates the FITS file, because applications in guiders
@@ -256,6 +257,9 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         :param exposure:  On entry, exposure.exptim is the intended exposure time in [sec]
                           On exit, exposure.data is the numpy array of the 16bit data
                           arranged in FITS order (i.e., the data of the bottom row appear first...)
+        :param nretries:  Number of retries left. Sometimes the camera receives an empty buffer
+                          immediately after the acquisition begins; in this case we retry
+                          taking the image.
         :return: The dictionary with the window location and size (x=,y=,width=,height=)
         """
 
@@ -272,13 +276,26 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         tout_ms = int(1.0e6 * (2.*exposure.exptime+5))
         self.notify(CameraEvent.EXPOSURE_INTEGRATING)
 
+        # Wait a tiny bit for setting to take effect. This probably does not help
+        # with the cases when the camera returns and empty buffer but ...
+        await asyncio.sleep(0.1)
+
         # the buffer allocated/created within the acquisition()
         buf = await self.loop.run_in_executor(None, self.cam.acquisition, tout_ms)
         if buf is None:
             raise ExposureError("Exposing for " + str(exposure.exptime) +
                                 " sec failed. Timout " + str(tout_ms/1.0e6))
 
-        return buf.get_data(), buf.get_image_region()
+        roi = buf.get_image_region()
+        if roi.width != self.image_area.wd or roi.height != self.image_area.ht:
+            if nretries > 0:
+                self.logger.warning(f'Camera {self.name} returned an empty buffer. Retrying.')
+                await asyncio.sleep(1)
+                return await self._expose_grabFrame(exposure, nretries=nretries-1)
+            else:
+                raise ExposureError(f'Camera {self.name} returned an empty buffer.')
+
+        return buf.get_data(), roi
 
 
     async def _expose_internal(self, exposure, **kwargs):
