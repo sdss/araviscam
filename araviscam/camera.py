@@ -265,7 +265,11 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         # To avoid being left over by other programs with no change
         # to set the exposure time, we switch the auto=0=off first
-        self.cam.set_exposure_time_auto(0)
+        try:
+            self.cam.set_exposure_time_auto(0)
+        except Exception:
+            pass
+
         # Aravis assumes exptime in micro second integers
         exptime_ms = int(0.5 + exposure.exptime * 1e6)
         self.cam.set_exposure_time(exptime_ms)
