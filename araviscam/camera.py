@@ -265,10 +265,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
 
         # To avoid being left over by other programs with no change
         # to set the exposure time, we switch the auto=0=off first
-        try:
-            self.cam.set_exposure_time_auto(0)
-        except Exception:
-            pass
+        self.cam.set_exposure_time_auto(0)
 
         # Aravis assumes exptime in micro second integers
         exptime_ms = int(0.5 + exposure.exptime * 1e6)
@@ -312,7 +309,23 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         # fill exposure.data with the frame's 16bit data
         # reg becomes a x=, y=, width= height= dictionary
         # these are in standard X11 coordinates where upper left =(0,0)
-        data, roi = await self._expose_grabFrame(exposure)
+        try:
+            data, roi = await self._expose_grabFrame(exposure)
+        except Exception as err:
+            # Sometimes the camera gets into read-only mode. In those cases
+            # reconnecting seems to work. Do that and try once more.
+            if 'access-denied' in str(err):
+                self.logger.warning(f'Camera replied with error: {err}')
+                self.logger.warning('Will try to reconnect the camera and try again.')
+
+                await asyncio.wait_for(self.disconnect(), timeout=3)
+                await asyncio.wait_for(self.connect(force=True), timeout=3)
+                data, roi = await self._expose_grabFrame(exposure)
+
+            else:
+                # All other errors are probably critical but change them to
+                # ExposureError so that it does not also crash the other cameras.
+                raise ExposureError(f"Camera failed to expose with error: {err}")
 
         self.logger.debug(f"{roi} {self.image_area}")
 
