@@ -313,18 +313,16 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
             data, roi = await self._expose_grabFrame(exposure)
         except Exception as err:
             # Sometimes the camera gets into read-only mode. In those cases
-            # reconnecting seems to work. Do that and try once more.
-            if 'access-denied' in str(err):
-                self.logger.warning(f'Camera replied with error: {err}')
-                self.logger.warning('Will try to reconnect the camera and try again.')
+            # reconnecting seems to work. If that fails again, raise the error
+            # but wrap it as an ExposureError so that the other camera does
+            # not stop exposing.
+            self.logger.warning(f"Camera replied with error: {err}")
+            self.logger.warning("Will reconnect the camera and try again.")
 
-                await asyncio.wait_for(self.disconnect(), timeout=3)
-                await asyncio.wait_for(self.connect(force=True), timeout=3)
+            try:
+                await self.reconnect()
                 data, roi = await self._expose_grabFrame(exposure)
-
-            else:
-                # All other errors are probably critical but change them to
-                # ExposureError so that it does not also crash the other cameras.
+            except Exception as err:
                 raise ExposureError(f"Camera failed to expose with error: {err}")
 
         self.logger.debug(f"{roi} {self.image_area}")
@@ -336,6 +334,11 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
         )
         self.temperature = await self.get_temperature()
 
+    async def reconnect(self):
+        """Reconnects the camera."""
+
+        await asyncio.wait_for(self.disconnect(), timeout=3)
+        await asyncio.wait_for(self.connect(force=True), timeout=3)
 
     def _status_internal(self):
         return {"temperature": self.cam.get_float("DeviceTemperature"),
