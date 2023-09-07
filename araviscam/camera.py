@@ -185,7 +185,7 @@ class BlackflyCamera(BaseCamera, ExposureTypeMixIn, ImageAreaMixIn, CoolerMixIn,
             await self.set_binning(1,1)
         except Exception as ex:
             self.logger.warning(f"{ex}")
-            await asyncio.wait(5.0)
+            await asyncio.sleep(5.0)
             self.logger.warning(f"{ex}")
             await self.set_binning(1,1)
 
