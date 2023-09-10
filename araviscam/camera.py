@@ -7,12 +7,16 @@ Python3 class to work with Aravis/GenICam cameras, subclass of sdss-basecam.
 
 """
 
+from __future__ import annotations
+
 import abc
 import asyncio
 import math
 from collections import namedtuple
 from logging import DEBUG, WARNING
-from typing import Any
+from typing import Any, Callable, Optional
+from basecam.exposure import Exposure
+from basecam.models.fits import FITSModel
 
 # Since the aravis wrapper for GenICam cameras (such as the Blackfly)
 # is using glib2 GObjects to represent cameras and streams, the
@@ -157,6 +161,7 @@ class BlackflyCamera(
         self.cam: Any = None
         self.cam_type = "unknown"
         self.temperature = -1
+        self.camera_state: str = "idle"
 
         #        self.site = self.camera_params.get('site', "LCO")
 
@@ -318,6 +323,12 @@ class BlackflyCamera(
 
         return buf.get_data(), roi
 
+    async def expose(self, *args, **kwargs):
+        exposure = await super().expose(*args, **kwargs)
+        self.camera_state = "idle"
+
+        return exposure
+
     async def _expose_internal(self, exposure, **kwargs):
         """Read a single full frame and store in a FITS file.
         :param exposure:  On entry exposure.exptim is the intended exposure time in [sec]
@@ -329,6 +340,7 @@ class BlackflyCamera(
         # reg becomes a x=, y=, width= height= dictionary
         # these are in standard X11 coordinates where upper left =(0,0)
         try:
+            self.camera_state = "exposing"
             data, roi = await self._expose_grabFrame(exposure)
         except Exception as err:
             # Sometimes the camera gets into read-only mode. In those cases
@@ -343,6 +355,8 @@ class BlackflyCamera(
                 data, roi = await self._expose_grabFrame(exposure)
             except Exception as err:
                 raise ExposureError(f"Camera failed to expose with error: {err}")
+            finally:
+                self.camera_state = "idle"
 
         self.logger.debug(f"{roi} {self.image_area}")
 
@@ -361,6 +375,7 @@ class BlackflyCamera(
 
     def _status_internal(self):
         return {
+            "camera_state": self.camera_state,
             "temperature": self.cam.get_float("DeviceTemperature"),
             "cooler": math.nan,
         }
